@@ -40,6 +40,8 @@ const MIN_TILE_W = 100;
 const MIN_TILE_H = 80;
 const RESIZE_HANDLE = 14;
 const SIDES = ["top", "right", "bottom", "left"];
+const CLICK_DRAG_PX = 4; // screen-px movement below which a tile press counts as a click, not a drag
+const DOUBLE_CLICK_MS = 400;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // COORDINATE HELPERS — convert between screen ↔ board space
@@ -137,6 +139,7 @@ export default function MuMap({ mapId }) {
   const fileInputRef = useRef(null);
   const surfaceRef = useRef(null);    // the transformed board surface (empty-canvas hit target)
   const wasSoleSelectedRef = useRef(false); // did this pointerdown land on the one already-selected tile?
+  const clickTrackRef = useRef({ id: null, t: 0 }); // last tile click, for manual double-click detection
 
   // ═══════════════════════════════════════════════════════════════════════
   // TOAST
@@ -401,15 +404,35 @@ export default function MuMap({ mapId }) {
       lassoRef.current = null;
       return;
     }
-    // Finish tile drag — commit to history
+    // Finish tile drag — commit to history, or treat as a click
     if (dragRef.current) {
-      if (dragRef.current.moved) {
-        const updates = [...dragRef.current.ids].map((id) => {
+      const { ids, moved, startClientX, startClientY } = dragRef.current;
+      const pressDistPx = Math.hypot(e.clientX - startClientX, e.clientY - startClientY);
+      if (moved && pressDistPx > CLICK_DRAG_PX) {
+        const updates = [...ids].map((id) => {
           const t = tiles.find((tt) => tt.id === id);
           return [id, { x: t.x, y: t.y }];
         });
         // Positions are already applied silently — re-apply to push history.
         dispatch({ type: "UPDATE_TILES", updates });
+      } else if (!readOnly && ids.size === 1) {
+        // Negligible movement — this was a click, not a drag. Driving the
+        // edit-entry logic from here (rather than the tile's onClick/
+        // onDoubleClick) is deliberate: once a tile press captures the
+        // pointer for dragging, Chrome can retarget the compatibility
+        // click/dblclick events away from the tile the instant the mouse
+        // moves even a pixel between press and release — which real mouse
+        // input almost always does — silently breaking native click
+        // detection. Pointer events don't have that problem.
+        const id = [...ids][0];
+        const now = Date.now();
+        const isDoubleClick = clickTrackRef.current.id === id && now - clickTrackRef.current.t < DOUBLE_CLICK_MS;
+        if (isDoubleClick || wasSoleSelectedRef.current) {
+          setEditingId(id);
+          clickTrackRef.current = { id: null, t: 0 };
+        } else {
+          clickTrackRef.current = { id, t: now };
+        }
       }
       dragRef.current = null;
       return;
@@ -469,6 +492,8 @@ export default function MuMap({ mapId }) {
       ids: dragIds || selection,
       lastX: bp.x,
       lastY: bp.y,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
       moved: false,
     };
     boardRef.current.setPointerCapture(e.pointerId);
