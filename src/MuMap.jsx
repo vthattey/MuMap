@@ -268,7 +268,7 @@ export default function MuMap({ mapId }) {
   // POINTER EVENTS — unified handler for drag, pan, resize, lasso, connect
   // ═══════════════════════════════════════════════════════════════════════
   const onBoardPointerDown = useCallback((e) => {
-    if (quickCreate) setQuickCreate(null);
+    if (quickCreate) { setQuickCreate(null); setConnecting(null); }
     if (e.button === 1 || (e.button === 0 && mode === "pan")) {
       // Pan
       panRef.current = { startX: e.clientX, startY: e.clientY, startPan: { ...pan } };
@@ -365,6 +365,13 @@ export default function MuMap({ mapId }) {
         const anchor = sourceTile ? anchorPoint(sourceTile, side) : bp;
         if (Math.hypot(bp.x - anchor.x, bp.y - anchor.y) > 30) {
           setQuickCreate({ x: bp.x, y: bp.y, fromId });
+          // Freeze the preview arrow pointing at the menu instead of
+          // clearing it — it stays on screen until a shape is picked (it
+          // becomes the real link) or the menu is dismissed.
+          connectingRef.current = null;
+          setConnecting({ fromId, side, x: bp.x, y: bp.y });
+          setConnectTarget(null);
+          return;
         }
       }
       connectingRef.current = null;
@@ -418,7 +425,7 @@ export default function MuMap({ mapId }) {
   // ---- Tile pointer down (drag or resize) ----
   const onTilePointerDown = useCallback((e, tile) => {
     e.stopPropagation();
-    if (quickCreate) setQuickCreate(null);
+    if (quickCreate) { setQuickCreate(null); setConnecting(null); }
     if (editingId === tile.id) return; // let clicks/selection happen inside the inline editor
 
     const bp = screenToBoard(e.clientX, e.clientY, boardRef.current, zoom, pan.x, pan.y);
@@ -693,7 +700,7 @@ export default function MuMap({ mapId }) {
 
       {shareOpen && <ShareMapPanel mapId={mapId} onClose={() => setShareOpen(false)} />}
 
-      {connecting && (
+      {connecting && !quickCreate && (
         <div style={styles.hintBar}>Drop on a tile to link — release elsewhere to cancel.</div>
       )}
 
@@ -995,6 +1002,7 @@ export default function MuMap({ mapId }) {
               setSelection(new Set([t.id]));
               setEditingId(t.id);
               setQuickCreate(null);
+              setConnecting(null);
             };
             return (
               <div style={{ ...styles.quickCreateMenu, left, top }} onPointerDown={(e) => e.stopPropagation()}>
