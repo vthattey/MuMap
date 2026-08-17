@@ -2,8 +2,8 @@
 
 You have two packages:
 
-- **`storyboard-mural-dist.zip`** — the already-built static site. Use this for the fastest path (Option A).
-- **`storyboard-mural-source.zip`** — the full source project. Use this if you want Netlify to rebuild automatically whenever you change the code (Option B).
+- **`mumap-dist.zip`** — the already-built static site. Use this for the fastest path (Option A).
+- **`mumap-source.zip`** — the full source project. Use this if you want Netlify to rebuild automatically whenever you change the code (Option B).
 
 ---
 
@@ -13,10 +13,10 @@ No Git, no command line.
 
 1. Go to **https://app.netlify.com** and sign up / log in (free — email, GitHub, or Google).
 2. On your Netlify dashboard, look for the **"Add new site"** button → choose **"Deploy manually"** (sometimes shown as a big dashed drop-zone that says *"Drag and drop your site output folder here"*).
-3. Unzip `storyboard-mural-dist.zip` on your computer — you'll get an `assets` folder and an `index.html`.
+3. Unzip `mumap-dist.zip` on your computer — you'll get an `assets` folder and an `index.html`.
 4. Drag that unzipped **folder's contents** (or the folder itself) onto the drop zone.
 5. Netlify uploads it and gives you a live URL immediately, like `https://random-name-123.netlify.app`.
-6. Open the URL — your storyboard is live.
+6. Open the URL — your board is live.
 
 **To update later:** rebuild, re-zip, and drag the new `dist` folder onto the same site's **Deploys** tab.
 
@@ -31,17 +31,17 @@ Netlify watches your repo and redeploys automatically every time you push a chan
 ### 1. Push the source to GitHub
 
 ```bash
-# unzip storyboard-mural-source.zip into a folder, then:
-cd storyboard-mural
+# unzip mumap-source.zip into a folder, then:
+cd mumap
 git init
 git add .
-git commit -m "Initial commit — storyboard mural"
+git commit -m "Initial commit — board mural"
 ```
 
 Create a new empty repo on **https://github.com/new** (don't initialize it with a README), then:
 
 ```bash
-git remote add origin https://github.com/YOUR_USERNAME/storyboard-mural.git
+git remote add origin https://github.com/YOUR_USERNAME/mumap.git
 git branch -M main
 git push -u origin main
 ```
@@ -50,12 +50,12 @@ git push -u origin main
 
 1. Go to **https://app.netlify.com** → **"Add new site"** → **"Import an existing project"**.
 2. Choose **GitHub** and authorize Netlify to access your repositories.
-3. Select the `storyboard-mural` repo.
+3. Select the `mumap` repo.
 4. Netlify auto-detects the build settings from `netlify.toml`:
    - **Build command:** `npm run build`
    - **Publish directory:** `dist`
 5. Click **"Deploy site"**.
-6. Wait ~1 minute for the first build — you'll get a live URL like `https://storyboard-mural-abc123.netlify.app`.
+6. Wait ~1 minute for the first build — you'll get a live URL like `https://mumap-abc123.netlify.app`.
 
 ### 3. Future updates
 
