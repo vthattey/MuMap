@@ -62,20 +62,26 @@ function anchorPoint(t, side) {
   }
 }
 
-// Point on a tile's boundary in the direction of (towardX, towardY) — used
-// to clip link lines/arrows to the tile edge instead of drawing to its center.
-function edgePoint(t, towardX, towardY) {
-  const cx = t.x + t.w / 2, cy = t.y + t.h / 2;
-  const dx = towardX - cx, dy = towardY - cy;
-  if (dx === 0 && dy === 0) return { x: cx, y: cy };
-  if (t.shape === "circle") {
-    const rx = t.w / 2, ry = t.h / 2;
-    const denom = Math.sqrt((dx * dx) / (rx * rx) + (dy * dy) / (ry * ry));
-    return { x: cx + dx / denom, y: cy + dy / denom };
+// Which pair of bounding-box sides a link should exit/enter from, based on
+// the tiles' relative position — always a matching pair (both horizontal or
+// both vertical) so the elbow path below only ever needs one bend.
+function pickSides(fromTile, toTile) {
+  const c1 = { x: fromTile.x + fromTile.w / 2, y: fromTile.y + fromTile.h / 2 };
+  const c2 = { x: toTile.x + toTile.w / 2, y: toTile.y + toTile.h / 2 };
+  const dx = c2.x - c1.x, dy = c2.y - c1.y;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? ["right", "left"] : ["left", "right"];
+  return dy >= 0 ? ["bottom", "top"] : ["top", "bottom"];
+}
+
+// Mural-style right-angle connector: a single bend at the midpoint between
+// the two anchor points, on whichever axis both sides share.
+function elbowPath(p1, p2, axis) {
+  if (axis === "h") {
+    const midX = (p1.x + p2.x) / 2;
+    return `M ${p1.x} ${p1.y} L ${midX} ${p1.y} L ${midX} ${p2.y} L ${p2.x} ${p2.y}`;
   }
-  const halfW = t.w / 2, halfH = t.h / 2;
-  const scale = Math.min(halfW / Math.abs(dx || 1e-6), halfH / Math.abs(dy || 1e-6));
-  return { x: cx + dx * scale, y: cy + dy * scale };
+  const midY = (p1.y + p2.y) / 2;
+  return `M ${p1.x} ${p1.y} L ${p1.x} ${midY} L ${p2.x} ${midY} L ${p2.x} ${p2.y}`;
 }
 
 function dotPositionStyle(side) {
@@ -119,6 +125,7 @@ export default function MuMap({ mapId }) {
   const [hoveredTileId, setHoveredTileId] = useState(null);
   const [connecting, setConnecting] = useState(null); // {fromId, side, x, y} board coords
   const [connectTarget, setConnectTarget] = useState(null);
+  const [quickCreate, setQuickCreate] = useState(null); // {x, y, fromId} board coords — drag-to-empty-space create menu
 
   // ---- Refs ----
   const boardRef = useRef(null);
@@ -261,6 +268,7 @@ export default function MuMap({ mapId }) {
   // POINTER EVENTS — unified handler for drag, pan, resize, lasso, connect
   // ═══════════════════════════════════════════════════════════════════════
   const onBoardPointerDown = useCallback((e) => {
+    if (quickCreate) setQuickCreate(null);
     if (e.button === 1 || (e.button === 0 && mode === "pan")) {
       // Pan
       panRef.current = { startX: e.clientX, startY: e.clientY, startPan: { ...pan } };
@@ -277,7 +285,7 @@ export default function MuMap({ mapId }) {
       e.currentTarget.setPointerCapture(e.pointerId);
       e.preventDefault();
     }
-  }, [mode, pan, zoom]);
+  }, [mode, pan, zoom, quickCreate]);
 
   const onBoardPointerMove = useCallback((e) => {
     // Live cursor for collaborators — fires regardless of what else is happening.
@@ -339,7 +347,7 @@ export default function MuMap({ mapId }) {
   const onBoardPointerUp = useCallback((e) => {
     // Finish connector-dot drag
     if (connectingRef.current) {
-      const { fromId } = connectingRef.current;
+      const { fromId, side } = connectingRef.current;
       if (connectTarget && connectTarget !== fromId) {
         const exists = links.some(
           (l) => (l.from === fromId && l.to === connectTarget) || (l.from === connectTarget && l.to === fromId)
@@ -347,6 +355,16 @@ export default function MuMap({ mapId }) {
         if (!exists) {
           dispatch({ type: "ADD_LINK", link: makeLink(fromId, connectTarget, { directed: true }) });
           showToast("Linked");
+        }
+      } else if (!readOnly) {
+        // Dropped on empty canvas, far enough from the source tile to be a
+        // deliberate drag (not just a click) — offer a quick-create menu,
+        // Mural-style, instead of silently cancelling.
+        const bp = screenToBoard(e.clientX, e.clientY, boardRef.current, zoom, pan.x, pan.y);
+        const sourceTile = tiles.find((t) => t.id === fromId);
+        const anchor = sourceTile ? anchorPoint(sourceTile, side) : bp;
+        if (Math.hypot(bp.x - anchor.x, bp.y - anchor.y) > 30) {
+          setQuickCreate({ x: bp.x, y: bp.y, fromId });
         }
       }
       connectingRef.current = null;
@@ -395,11 +413,12 @@ export default function MuMap({ mapId }) {
       if (t) dispatch({ type: "UPDATE_TILE", id: t.id, patch: { w: t.w, h: t.h } });
       resizeRef.current = null;
     }
-  }, [lasso, tiles, dispatch, connectTarget, links, showToast]);
+  }, [lasso, tiles, dispatch, connectTarget, links, showToast, readOnly, pan, zoom]);
 
   // ---- Tile pointer down (drag or resize) ----
   const onTilePointerDown = useCallback((e, tile) => {
     e.stopPropagation();
+    if (quickCreate) setQuickCreate(null);
     if (editingId === tile.id) return; // let clicks/selection happen inside the inline editor
 
     const bp = screenToBoard(e.clientX, e.clientY, boardRef.current, zoom, pan.x, pan.y);
@@ -446,7 +465,7 @@ export default function MuMap({ mapId }) {
       moved: false,
     };
     boardRef.current.setPointerCapture(e.pointerId);
-  }, [zoom, pan, selection, editingId, readOnly]);
+  }, [zoom, pan, selection, editingId, readOnly, quickCreate]);
 
   // ---- Connector dot pointer down → start link drag ----
   const onDotPointerDown = useCallback((e, tile, side) => {
@@ -501,6 +520,7 @@ export default function MuMap({ mapId }) {
       else if (e.key === "Escape") {
         setSelection(new Set()); setMode("select");
         connectingRef.current = null; setConnecting(null); setConnectTarget(null);
+        setQuickCreate(null);
       }
       else if (e.key === "=" || e.key === "+") { if (ctrl) { e.preventDefault(); zoomIn(); } }
       else if (e.key === "-") { if (ctrl) { e.preventDefault(); zoomOut(); } }
@@ -543,10 +563,6 @@ export default function MuMap({ mapId }) {
     e.target.value = "";
   }, [dispatch, showToast]);
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // LINK HELPERS
-  // ═══════════════════════════════════════════════════════════════════════
-  const tileCenter = (t) => ({ x: t.x + t.w / 2, y: t.y + t.h / 2 });
   const singleSelectedTile = selection.size === 1 ? tiles.find((t) => selection.has(t.id)) : null;
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -738,21 +754,22 @@ export default function MuMap({ mapId }) {
                   const from = tiles.find((t) => t.id === l.from);
                   const to = tiles.find((t) => t.id === l.to);
                   if (!from || !to) return null;
-                  const c1 = tileCenter(from), c2 = tileCenter(to);
-                  const p1 = edgePoint(from, c2.x, c2.y);
-                  const p2 = edgePoint(to, c1.x, c1.y);
-                  const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+                  const [fromSide, toSide] = pickSides(from, to);
+                  const axis = (fromSide === "left" || fromSide === "right") ? "h" : "v";
+                  const p1 = anchorPoint(from, fromSide);
+                  const p2 = anchorPoint(to, toSide);
+                  const d = elbowPath(p1, p2, axis);
                   const isSel = selectedLink === l.id;
                   return (
                     <g key={l.id}>
                       {/* fat invisible hit area */}
-                      <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+                      <path d={d} fill="none"
                         stroke="transparent" strokeWidth={16}
                         style={{ pointerEvents: "stroke", cursor: "pointer" }}
                         onClick={(e) => { e.stopPropagation(); setSelectedLink((c) => c === l.id ? null : l.id); }} />
-                      <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+                      <path d={d} fill="none"
                         stroke={isSel ? LINK_SELECTED : LINK_COLOR} strokeWidth={isSel ? 2.75 : 2}
-                        strokeLinecap="round" style={{ pointerEvents: "none" }}
+                        strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "none" }}
                         markerEnd={l.directed ? `url(#${isSel ? "arrow-selected" : "arrow-default"})` : undefined} />
                     </g>
                   );
@@ -761,11 +778,15 @@ export default function MuMap({ mapId }) {
                 {connecting && (() => {
                   const fromTile = tiles.find((t) => t.id === connecting.fromId);
                   if (!fromTile) return null;
-                  const start = edgePoint(fromTile, connecting.x, connecting.y);
+                  const start = anchorPoint(fromTile, connecting.side);
+                  const axis = (connecting.side === "left" || connecting.side === "right") ? "h" : "v";
+                  const d = axis === "h"
+                    ? `M ${start.x} ${start.y} L ${connecting.x} ${start.y} L ${connecting.x} ${connecting.y}`
+                    : `M ${start.x} ${start.y} L ${start.x} ${connecting.y} L ${connecting.x} ${connecting.y}`;
                   return (
-                    <line x1={start.x} y1={start.y} x2={connecting.x} y2={connecting.y}
+                    <path d={d} fill="none"
                       stroke={LINK_PREVIEW} strokeWidth={2.5} strokeDasharray="6 4"
-                      strokeLinecap="round" markerEnd="url(#arrow-preview)" />
+                      strokeLinecap="round" strokeLinejoin="round" markerEnd="url(#arrow-preview)" />
                   );
                 })()}
 
@@ -783,8 +804,9 @@ export default function MuMap({ mapId }) {
                 const from = tiles.find((t) => t.id === l.from);
                 const to = tiles.find((t) => t.id === l.to);
                 if (!from || !to) return null;
-                const p1 = edgePoint(from, tileCenter(to).x, tileCenter(to).y);
-                const p2 = edgePoint(to, tileCenter(from).x, tileCenter(from).y);
+                const [fromSide, toSide] = pickSides(from, to);
+                const p1 = anchorPoint(from, fromSide);
+                const p2 = anchorPoint(to, toSide);
                 const cx = (p1.x + p2.x) / 2, cy = (p1.y + p2.y) / 2;
                 return (
                   <button style={{ ...styles.removeLinkBtn, left: cx - 14, top: cy - 14 }}
@@ -959,6 +981,44 @@ export default function MuMap({ mapId }) {
               </div>
             );
           })()}
+
+          {/* ════════ QUICK-CREATE MENU — dropping a connector on empty canvas ════════ */}
+          {quickCreate && (() => {
+            const sourceTile = tiles.find((t) => t.id === quickCreate.fromId);
+            const left = quickCreate.x * zoom + pan.x;
+            const top = quickCreate.y * zoom + pan.y;
+            const createLinkedTile = (type, shape, overrides = {}) => {
+              const dims = SHAPES[shape] || SHAPES.rectangle;
+              const t = makeTile(type, shape, quickCreate.x - dims.w / 2, quickCreate.y - dims.h / 2, overrides);
+              dispatch({ type: "ADD_TILE", tile: t });
+              dispatch({ type: "ADD_LINK", link: makeLink(quickCreate.fromId, t.id, { directed: true }) });
+              setSelection(new Set([t.id]));
+              setEditingId(t.id);
+              setQuickCreate(null);
+            };
+            return (
+              <div style={{ ...styles.quickCreateMenu, left, top }} onPointerDown={(e) => e.stopPropagation()}>
+                {sourceTile && (
+                  <button style={styles.quickCreateBtn}
+                    onClick={() => createLinkedTile(sourceTile.type, sourceTile.shape, { color: sourceTile.color })}>
+                    <Copy size={13} /> Same shape
+                  </button>
+                )}
+                <div style={styles.quickCreateLabel}>Or pick a shape</div>
+                <div style={styles.quickCreateShapesRow}>
+                  {Object.entries(SHAPES).map(([key, s]) => {
+                    const Icon = SHAPE_ICONS[key];
+                    return (
+                      <button key={key} style={styles.quickCreateShapeBtn} title={s.label}
+                        onClick={() => createLinkedTile("user-story", key)}>
+                        <Icon size={16} strokeWidth={1.75} color={INK_SOFT} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -1046,6 +1106,13 @@ const styles = {
   miniSwatch: { width: 18, height: 18, borderRadius: "50%", border: "none", cursor: "pointer", flexShrink: 0 },
   miniShapeBtn: { width: 22, height: 22, borderRadius: 6, border: "none", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
   miniDeleteBtn: { width: 24, height: 24, borderRadius: 6, border: "none", background: "rgba(255,255,255,0.12)", color: "#f2a3a3", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+
+  // Quick-create menu — dropping a connector on empty canvas (Mural-style)
+  quickCreateMenu: { position: "absolute", transform: "translate(-50%, 12px)", display: "flex", flexDirection: "column", gap: 6, background: "#ffffff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 10, boxShadow: "0 12px 28px rgba(31,41,55,0.2)", zIndex: 35, minWidth: 150 },
+  quickCreateBtn: { display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderRadius: 8, border: "none", background: SUBTLE_BG, color: INK, fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
+  quickCreateLabel: { fontSize: 10, fontWeight: 700, letterSpacing: 0.4, color: INK_FAINT, textTransform: "uppercase", marginTop: 2 },
+  quickCreateShapesRow: { display: "flex", gap: 6 },
+  quickCreateShapeBtn: { width: 32, height: 32, borderRadius: 8, border: `1px solid ${BORDER}`, background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
 
   // Toast
   toast: { position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", background: "#1f2937", color: "#fff", padding: "7px 16px", borderRadius: 20, fontSize: 12, zIndex: 60, boxShadow: "0 6px 16px rgba(0,0,0,0.25)" },
