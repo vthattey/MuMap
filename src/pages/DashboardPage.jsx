@@ -6,33 +6,49 @@ import { useAuth } from "../auth/AuthContext.jsx";
 import { FONT, INK, INK_SOFT, INK_FAINT, BORDER, ACCENT, SUBTLE_BG, DANGER } from "../lib/theme.js";
 
 export default function DashboardPage() {
-  const { profile, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
   const [maps, setMaps] = useState(null); // null = loading
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
 
   const loadMaps = useCallback(async () => {
-    const { data } = await supabase.from("maps").select("*").order("updated_at", { ascending: false });
+    // RLS already restricts this to maps the caller owns or has been
+    // granted access to — no extra filtering needed client-side.
+    const { data } = await supabase
+      .from("maps")
+      .select("*, owner:profiles!created_by(display_name)")
+      .order("updated_at", { ascending: false });
     setMaps(data || []);
   }, []);
 
   useEffect(() => {
+    if (!user) return;
     loadMaps();
+    // Also listen for map_shares changes naming this user, so a newly
+    // shared map appears without needing a manual refresh.
     const channel = supabase
       .channel("maps-list")
       .on("postgres_changes", { event: "*", schema: "public", table: "maps" }, () => loadMaps())
+      .on("postgres_changes", { event: "*", schema: "public", table: "map_shares", filter: `user_id=eq.${user.id}` }, () => loadMaps())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [loadMaps]);
+  }, [loadMaps, user?.id]);
 
   const createMap = useCallback(async (e) => {
     e.preventDefault();
     const name = newName.trim() || "Untitled map";
-    const { data, error } = await supabase.from("maps").insert({ name }).select().single();
     setCreating(false);
     setNewName("");
-    if (!error && data) navigate(`/map/${data.id}`);
+    // Insert with a client-generated id and no RETURNING, then fetch the
+    // row back as a separate query — asking Postgres to RETURN the row
+    // from the INSERT itself re-checks the SELECT policy (has_map_access)
+    // against a row that's still mid-transaction, which the security
+    // definer helper doesn't reliably see yet; a follow-up SELECT does.
+    const id = crypto.randomUUID();
+    const { error: insertError } = await supabase.from("maps").insert({ id, name });
+    if (insertError) { console.error("[createMap] insert failed:", insertError); return; }
+    navigate(`/map/${id}`);
   }, [newName, navigate]);
 
   const deleteMap = useCallback(async (e, id) => {
@@ -72,14 +88,22 @@ export default function DashboardPage() {
         {maps && maps.length === 0 && <div style={styles.empty}>No maps yet — create the first one.</div>}
 
         <div style={styles.grid}>
-          {maps && maps.map((m) => (
+          {maps && maps.map((m) => {
+            const isOwner = m.created_by === user?.id;
+            const ownership = isOwner ? "Owned by you"
+              : m.created_by === null ? "Legacy shared map"
+              : `Shared by ${m.owner?.display_name || "someone"}`;
+            return (
             <div key={m.id} style={styles.card} onClick={() => navigate(`/map/${m.id}`)}>
               <div style={styles.cardIcon}><MapIcon size={18} color={ACCENT} /></div>
               <div style={styles.cardName}>{m.name}</div>
-              <div style={styles.cardMeta}>Updated {new Date(m.updated_at).toLocaleDateString()}</div>
-              <button style={styles.deleteBtn} onClick={(e) => deleteMap(e, m.id)} title="Delete map"><Trash2 size={14} /></button>
+              <div style={styles.cardMeta}>{ownership} · Updated {new Date(m.updated_at).toLocaleDateString()}</div>
+              {(isOwner || m.created_by === null) && (
+                <button style={styles.deleteBtn} onClick={(e) => deleteMap(e, m.id)} title="Delete map"><Trash2 size={14} /></button>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

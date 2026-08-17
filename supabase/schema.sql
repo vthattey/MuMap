@@ -55,22 +55,109 @@ create trigger on_auth_user_created
   for each row execute procedure handle_new_user();
 
 -- ═══════════════════════════════════════════════════════════════════════
--- MAPS — shared workspace: any authenticated user can see/create/edit/delete.
+-- MAPS — private by default: visible/editable only to the owner, plus
+-- anyone the owner has explicitly granted access to via map_shares below.
+-- A map with created_by = NULL is treated as globally accessible; this
+-- only happens for rows inserted before ownership existed (see
+-- has_map_access) and should never occur for new inserts, since the
+-- column defaults to the creating user.
 -- ═══════════════════════════════════════════════════════════════════════
 create table if not exists maps (
   id uuid primary key default gen_random_uuid(),
   name text not null default 'Untitled map',
-  created_by uuid references profiles (id) on delete set null,
+  created_by uuid not null default auth.uid() references profiles (id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 alter table maps enable row level security;
 
-create policy "maps are fully accessible to authenticated users"
-  on maps for all
-  using (auth.uid() is not null)
-  with check (auth.uid() is not null);
+-- ═══════════════════════════════════════════════════════════════════════
+-- MAP_SHARES — explicit per-user grants, set by a map's owner. Created
+-- before the maps policies below since has_map_access() depends on it.
+-- ═══════════════════════════════════════════════════════════════════════
+create table if not exists map_shares (
+  id uuid primary key default gen_random_uuid(),
+  map_id uuid not null references maps (id) on delete cascade,
+  user_id uuid not null references profiles (id) on delete cascade,
+  permission text not null check (permission in ('view', 'edit')),
+  created_at timestamptz not null default now(),
+  unique (map_id, user_id)
+);
+
+create index if not exists map_shares_map_id_idx on map_shares (map_id);
+create index if not exists map_shares_user_id_idx on map_shares (user_id);
+
+alter table map_shares enable row level security;
+
+create policy "shares visible to the sharee or the map owner"
+  on map_shares for select
+  using (
+    user_id = auth.uid()
+    or exists (select 1 from maps m where m.id = map_id and m.created_by = auth.uid())
+  );
+
+create policy "only the map owner manages shares"
+  on map_shares for all
+  using (exists (select 1 from maps m where m.id = map_id and m.created_by = auth.uid()))
+  with check (exists (select 1 from maps m where m.id = map_id and m.created_by = auth.uid()));
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- has_map_access — single source of truth for the RLS policies below.
+-- A map with created_by = NULL is grandfathered as globally accessible;
+-- this can only happen on rows migrated from before ownership existed.
+-- ═══════════════════════════════════════════════════════════════════════
+create or replace function has_map_access(target_map_id uuid, need text default 'view')
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from maps m
+    where m.id = target_map_id
+      and (m.created_by = auth.uid() or m.created_by is null)
+  ) or exists (
+    select 1 from map_shares s
+    where s.map_id = target_map_id
+      and s.user_id = auth.uid()
+      and (need = 'view' or s.permission = 'edit')
+  );
+$$;
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- find_user_id_by_email — lets the client resolve "share with this email"
+-- without being able to query auth.users directly.
+-- ═══════════════════════════════════════════════════════════════════════
+create or replace function find_user_id_by_email(lookup_email text)
+returns uuid
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select id from auth.users where email = lookup_email limit 1;
+$$;
+
+grant execute on function has_map_access(uuid, text) to authenticated;
+grant execute on function find_user_id_by_email(text) to authenticated;
+
+create policy "maps are selectable with view access"
+  on maps for select
+  using (has_map_access(id, 'view'));
+
+create policy "maps are insertable by their creator"
+  on maps for insert
+  with check (created_by = auth.uid());
+
+create policy "maps are updatable by their owner"
+  on maps for update
+  using (created_by = auth.uid() or created_by is null);
+
+create policy "maps are deletable by their owner"
+  on maps for delete
+  using (created_by = auth.uid() or created_by is null);
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- TILES — id is client-generated (crypto.randomUUID) so optimistic local
@@ -98,10 +185,21 @@ create index if not exists tiles_map_id_idx on tiles (map_id);
 
 alter table tiles enable row level security;
 
-create policy "tiles are fully accessible to authenticated users"
-  on tiles for all
-  using (auth.uid() is not null)
-  with check (auth.uid() is not null);
+create policy "tiles are selectable with view access"
+  on tiles for select
+  using (has_map_access(map_id, 'view'));
+
+create policy "tiles are writable with edit access"
+  on tiles for insert
+  with check (has_map_access(map_id, 'edit'));
+
+create policy "tiles are updatable with edit access"
+  on tiles for update
+  using (has_map_access(map_id, 'edit'));
+
+create policy "tiles are deletable with edit access"
+  on tiles for delete
+  using (has_map_access(map_id, 'edit'));
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- LINKS
@@ -120,10 +218,21 @@ create index if not exists links_map_id_idx on links (map_id);
 
 alter table links enable row level security;
 
-create policy "links are fully accessible to authenticated users"
-  on links for all
-  using (auth.uid() is not null)
-  with check (auth.uid() is not null);
+create policy "links are selectable with view access"
+  on links for select
+  using (has_map_access(map_id, 'view'));
+
+create policy "links are writable with edit access"
+  on links for insert
+  with check (has_map_access(map_id, 'edit'));
+
+create policy "links are updatable with edit access"
+  on links for update
+  using (has_map_access(map_id, 'edit'));
+
+create policy "links are deletable with edit access"
+  on links for delete
+  using (has_map_access(map_id, 'edit'));
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- REALTIME — stream row changes for live sync (Presence/Broadcast need no
@@ -131,3 +240,4 @@ create policy "links are fully accessible to authenticated users"
 -- ═══════════════════════════════════════════════════════════════════════
 alter publication supabase_realtime add table tiles;
 alter publication supabase_realtime add table links;
+alter publication supabase_realtime add table map_shares;

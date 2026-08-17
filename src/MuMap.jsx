@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Download, Upload, X, Trash2, ArrowLeft,
+  Download, Upload, X, Trash2, ArrowLeft, Share2, Eye,
   ZoomIn, ZoomOut, Maximize, Undo2, Redo2, Copy, Move,
   Square, Circle, RectangleHorizontal,
 } from "lucide-react";
-import { supabase } from "./lib/supabaseClient.js";
 import { useBoardSync } from "./hooks/useBoardSync.js";
+import { useMapPermission } from "./hooks/useMapPermission.js";
 import { TILE_TYPES, SHAPES, SWATCHES, makeTile, makeLink } from "./lib/boardModel.js";
+import ShareMapPanel from "./components/ShareMapPanel.jsx";
 
 const SHAPE_ICONS = { square: Square, rectangle: RectangleHorizontal, circle: Circle };
 
@@ -93,13 +94,18 @@ function dotPositionStyle(side) {
 export default function MuMap({ mapId }) {
   const navigate = useNavigate();
 
+  // ---- Access control ----
+  const { loading: permLoading, map: mapRow, permission } = useMapPermission(mapId);
+  const readOnly = permission === "view";
+  const isOwner = permission === "owner";
+
   // ---- Core state (undoable, synced with Supabase) ----
   const {
     tiles, links, dispatch, canUndo, canRedo, loaded,
     collaborators, remoteCursors, broadcastTileUpdates, broadcastCursor,
-  } = useBoardSync(mapId);
+  } = useBoardSync(permission ? mapId : null); // don't fetch/subscribe until access is confirmed
 
-  const [mapName, setMapName] = useState("");
+  const [shareOpen, setShareOpen] = useState(false);
 
   // ---- UI-only state (not undoable) ----
   const [zoom, setZoom] = useState(1);
@@ -124,18 +130,6 @@ export default function MuMap({ mapId }) {
   const fileInputRef = useRef(null);
   const surfaceRef = useRef(null);    // the transformed board surface (empty-canvas hit target)
   const wasSoleSelectedRef = useRef(false); // did this pointerdown land on the one already-selected tile?
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // MAP NAME — for the header, purely informational
-  // ═══════════════════════════════════════════════════════════════════════
-  useEffect(() => {
-    if (!mapId) return;
-    let cancelled = false;
-    supabase.from("maps").select("name").eq("id", mapId).single().then(({ data }) => {
-      if (!cancelled && data) setMapName(data.name);
-    });
-    return () => { cancelled = true; };
-  }, [mapId]);
 
   // ═══════════════════════════════════════════════════════════════════════
   // TOAST
@@ -213,14 +207,16 @@ export default function MuMap({ mapId }) {
   // TILE CRUD (through dispatch)
   // ═══════════════════════════════════════════════════════════════════════
   const addTileAt = useCallback((type, bx, by, shape = "rectangle") => {
+    if (readOnly) return undefined;
     const t = makeTile(type, shape, bx, by);
     dispatch({ type: "ADD_TILE", tile: t });
     setEditingId(t.id);
     setSelection(new Set([t.id]));
     return t;
-  }, [dispatch]);
+  }, [dispatch, readOnly]);
 
   const addShapeInView = useCallback((shapeKey) => {
+    if (readOnly) return;
     const el = boardRef.current;
     if (!el) return;
     const dims = SHAPES[shapeKey] || SHAPES.rectangle;
@@ -228,9 +224,10 @@ export default function MuMap({ mapId }) {
     const cx = (r.width / 2 - pan.x) / zoom - dims.w / 2 + (Math.random() - 0.5) * 60;
     const cy = (r.height / 2 - pan.y) / zoom - dims.h / 2 + (Math.random() - 0.5) * 60;
     addTileAt("user-story", cx, cy, shapeKey);
-  }, [addTileAt, pan, zoom]);
+  }, [addTileAt, pan, zoom, readOnly]);
 
   const duplicateSelection = useCallback(() => {
+    if (readOnly) return;
     const sel = tiles.filter((t) => selection.has(t.id));
     if (sel.length === 0) return;
     const idMap = new Map();
@@ -251,14 +248,14 @@ export default function MuMap({ mapId }) {
     if (dupeLinks.length > 0) dupeLinks.forEach((dl) => dispatch({ type: "ADD_LINK", link: dl }));
     setSelection(new Set(dupes.map((d) => d.id)));
     showToast(`Duplicated ${dupes.length} tile${dupes.length > 1 ? "s" : ""}`);
-  }, [tiles, links, selection, dispatch, showToast]);
+  }, [tiles, links, selection, dispatch, showToast, readOnly]);
 
   const deleteSelection = useCallback(() => {
-    if (selection.size === 0) return;
+    if (readOnly || selection.size === 0) return;
     dispatch({ type: "DELETE_TILES", ids: [...selection] });
     setSelection(new Set());
     if (editingId && selection.has(editingId)) setEditingId(null);
-  }, [selection, dispatch, editingId]);
+  }, [selection, dispatch, editingId, readOnly]);
 
   // ═══════════════════════════════════════════════════════════════════════
   // POINTER EVENTS — unified handler for drag, pan, resize, lasso, connect
@@ -405,19 +402,23 @@ export default function MuMap({ mapId }) {
     e.stopPropagation();
     if (editingId === tile.id) return; // let clicks/selection happen inside the inline editor
 
-    // Check resize handle
     const bp = screenToBoard(e.clientX, e.clientY, boardRef.current, zoom, pan.x, pan.y);
-    const nearRight = bp.x > tile.x + tile.w - RESIZE_HANDLE / zoom;
-    const nearBottom = bp.y > tile.y + tile.h - RESIZE_HANDLE / zoom;
-    if (nearRight && nearBottom) {
-      resizeRef.current = { id: tile.id };
-      boardRef.current.setPointerCapture(e.pointerId);
-      return;
+
+    // Resizing and dragging are write operations — skipped entirely for
+    // read-only viewers, but selection (harmless, local-only) still works.
+    if (!readOnly) {
+      const nearRight = bp.x > tile.x + tile.w - RESIZE_HANDLE / zoom;
+      const nearBottom = bp.y > tile.y + tile.h - RESIZE_HANDLE / zoom;
+      if (nearRight && nearBottom) {
+        resizeRef.current = { id: tile.id };
+        boardRef.current.setPointerCapture(e.pointerId);
+        return;
+      }
     }
 
     // A second click on an already (and solely) selected tile enters inline
     // text editing — captured here, before selection changes below.
-    wasSoleSelectedRef.current = !e.shiftKey && selection.size === 1 && selection.has(tile.id);
+    wasSoleSelectedRef.current = !readOnly && !e.shiftKey && selection.size === 1 && selection.has(tile.id);
 
     // Start tile drag
     let dragIds;
@@ -437,6 +438,7 @@ export default function MuMap({ mapId }) {
       }
     }
 
+    if (readOnly) return;
     dragRef.current = {
       ids: dragIds || selection,
       lastX: bp.x,
@@ -444,16 +446,17 @@ export default function MuMap({ mapId }) {
       moved: false,
     };
     boardRef.current.setPointerCapture(e.pointerId);
-  }, [zoom, pan, selection, editingId]);
+  }, [zoom, pan, selection, editingId, readOnly]);
 
   // ---- Connector dot pointer down → start link drag ----
   const onDotPointerDown = useCallback((e, tile, side) => {
     e.stopPropagation();
+    if (readOnly) return;
     const anchor = anchorPoint(tile, side);
     connectingRef.current = { fromId: tile.id, side };
     setConnecting({ fromId: tile.id, side, x: anchor.x, y: anchor.y });
     boardRef.current.setPointerCapture(e.pointerId);
-  }, []);
+  }, [readOnly]);
 
   // ---- Tile click: a click on an already-selected tile enters inline edit ----
   const onTileClick = useCallback((e, tile) => {
@@ -464,9 +467,10 @@ export default function MuMap({ mapId }) {
 
   const onTileDoubleClick = useCallback((e, tile) => {
     e.stopPropagation();
+    if (readOnly) return;
     setSelection(new Set([tile.id]));
     setEditingId(tile.id);
-  }, []);
+  }, [readOnly]);
 
   // ═══════════════════════════════════════════════════════════════════════
   // DOUBLE-CLICK BOARD → add tile
@@ -579,6 +583,19 @@ export default function MuMap({ mapId }) {
   // ═══════════════════════════════════════════════════════════════════════
   const cursorStyle = mode === "pan" ? "grab" : "default";
 
+  if (permLoading) {
+    return <div style={styles.accessScreen}>Loading…</div>;
+  }
+  if (!permission) {
+    return (
+      <div style={styles.accessScreen}>
+        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>You don't have access to this map</div>
+        <div style={{ fontSize: 13, color: INK_FAINT, marginBottom: 16 }}>Ask its owner to share it with you, or head back to your maps.</div>
+        <button style={styles.btnPrimary} onClick={() => navigate("/")}><ArrowLeft size={14} /> Back to maps</button>
+      </div>
+    );
+  }
+
   return (
     <div style={styles.page}>
       <style>{`
@@ -597,17 +614,25 @@ export default function MuMap({ mapId }) {
         <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
           <button className="toolbtn" style={styles.iconBtn} onClick={() => navigate("/")} title="Back to maps"><ArrowLeft size={16} /></button>
           <div style={{ minWidth: 0 }}>
-            <div style={styles.headerTitle}>{mapName || "MuMap"}</div>
-            <div style={styles.headerSub}>Pick a shape from the panel · Drag a tile's dots to link · Space to pan</div>
+            <div style={styles.headerTitle}>{mapRow?.name || "MuMap"}</div>
+            <div style={styles.headerSub}>
+              {readOnly ? "View only — ask the owner for edit access to make changes" : "Pick a shape from the panel · Drag a tile's dots to link · Space to pan"}
+            </div>
           </div>
         </div>
         <div style={styles.toolbarRow}>
+          {readOnly && <div style={styles.viewOnlyBadge}><Eye size={12} /> View only</div>}
+
           {collaborators.length > 0 && (
             <div style={styles.avatarStack} title={collaborators.map((c) => c.name).join(", ")}>
               {collaborators.slice(0, 5).map((c) => (
                 <div key={c.id} style={{ ...styles.avatar, background: c.color }}>{(c.name || "?").slice(0, 1).toUpperCase()}</div>
               ))}
             </div>
+          )}
+
+          {isOwner && (
+            <button className="toolbtn" style={styles.btn} onClick={() => setShareOpen(true)}><Share2 size={14} /> Share</button>
           )}
 
           <button className="toolbtn" style={{ ...styles.btn, background: mode === "pan" ? ACCENT_SOFT : SUBTLE_BG }}
@@ -617,15 +642,19 @@ export default function MuMap({ mapId }) {
 
           <div style={styles.separator} />
 
-          {/* Undo / Redo */}
-          <button className="toolbtn" style={{ ...styles.iconBtn, opacity: canUndo ? 1 : 0.35 }} onClick={() => dispatch({ type: "UNDO" })} title="Undo (Ctrl+Z)"><Undo2 size={16} /></button>
-          <button className="toolbtn" style={{ ...styles.iconBtn, opacity: canRedo ? 1 : 0.35 }} onClick={() => dispatch({ type: "REDO" })} title="Redo (Ctrl+Shift+Z)"><Redo2 size={16} /></button>
+          {!readOnly && (
+            <>
+              {/* Undo / Redo */}
+              <button className="toolbtn" style={{ ...styles.iconBtn, opacity: canUndo ? 1 : 0.35 }} onClick={() => dispatch({ type: "UNDO" })} title="Undo (Ctrl+Z)"><Undo2 size={16} /></button>
+              <button className="toolbtn" style={{ ...styles.iconBtn, opacity: canRedo ? 1 : 0.35 }} onClick={() => dispatch({ type: "REDO" })} title="Redo (Ctrl+Shift+Z)"><Redo2 size={16} /></button>
 
-          {/* Duplicate */}
-          <button className="toolbtn" style={{ ...styles.iconBtn, opacity: selection.size > 0 ? 1 : 0.35 }}
-            onClick={duplicateSelection} title="Duplicate (Ctrl+D)"><Copy size={16} /></button>
+              {/* Duplicate */}
+              <button className="toolbtn" style={{ ...styles.iconBtn, opacity: selection.size > 0 ? 1 : 0.35 }}
+                onClick={duplicateSelection} title="Duplicate (Ctrl+D)"><Copy size={16} /></button>
 
-          <div style={styles.separator} />
+              <div style={styles.separator} />
+            </>
+          )}
 
           {/* Zoom */}
           <button className="toolbtn" style={styles.iconBtn} onClick={zoomOut} title="Zoom out"><ZoomOut size={16} /></button>
@@ -637,10 +666,16 @@ export default function MuMap({ mapId }) {
 
           {/* IO */}
           <button className="toolbtn" style={styles.btn} onClick={exportBoard}><Download size={14} /> Save</button>
-          <button className="toolbtn" style={styles.btn} onClick={() => fileInputRef.current?.click()}><Upload size={14} /> Load</button>
-          <input ref={fileInputRef} type="file" accept="application/json" style={{ display: "none" }} onChange={importBoard} />
+          {!readOnly && (
+            <>
+              <button className="toolbtn" style={styles.btn} onClick={() => fileInputRef.current?.click()}><Upload size={14} /> Load</button>
+              <input ref={fileInputRef} type="file" accept="application/json" style={{ display: "none" }} onChange={importBoard} />
+            </>
+          )}
         </div>
       </div>
+
+      {shareOpen && <ShareMapPanel mapId={mapId} onClose={() => setShareOpen(false)} />}
 
       {connecting && (
         <div style={styles.hintBar}>Drop on a tile to link — release elsewhere to cancel.</div>
@@ -649,18 +684,20 @@ export default function MuMap({ mapId }) {
       {/* ════════ MAIN ROW: side panel + board ════════ */}
       <div style={styles.mainRow}>
         {/* ════════ SIDE PANEL — Mural-style shape picker ════════ */}
-        <div style={styles.sidebar}>
-          <div style={styles.sidebarLabel}>Add tile</div>
-          {Object.entries(SHAPES).map(([key, s]) => {
-            const Icon = SHAPE_ICONS[key];
-            return (
-              <button key={key} className="shape-btn" style={styles.shapeBtn} onClick={() => addShapeInView(key)} title={`Add ${s.label}`}>
-                <span style={styles.shapePreview}><Icon size={26} strokeWidth={1.75} color={INK_SOFT} /></span>
-                <span>{s.label}</span>
-              </button>
-            );
-          })}
-        </div>
+        {!readOnly && (
+          <div style={styles.sidebar}>
+            <div style={styles.sidebarLabel}>Add tile</div>
+            {Object.entries(SHAPES).map(([key, s]) => {
+              const Icon = SHAPE_ICONS[key];
+              return (
+                <button key={key} className="shape-btn" style={styles.shapeBtn} onClick={() => addShapeInView(key)} title={`Add ${s.label}`}>
+                  <span style={styles.shapePreview}><Icon size={26} strokeWidth={1.75} color={INK_SOFT} /></span>
+                  <span>{s.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* ════════ BOARD AREA (zoom + pan layer) ════════ */}
         <div style={styles.boardArea}>
@@ -762,7 +799,7 @@ export default function MuMap({ mapId }) {
                 const isConnectTarget = connecting && connectTarget === t.id;
                 const isConnectSource = connecting && connecting.fromId === t.id;
                 const isCircle = t.shape === "circle";
-                const showDots = mode === "select" && !editingId &&
+                const showDots = !readOnly && mode === "select" && !editingId &&
                   (isConnectSource || (!connecting && (hoveredTileId === t.id || isSel)));
                 return (
                   <div key={t.id} className="tile"
@@ -864,7 +901,7 @@ export default function MuMap({ mapId }) {
           </div>
 
           {/* ════════ SELECTION TOOLBAR (floating) ════════ */}
-          {selection.size > 0 && !editingId && (
+          {!readOnly && selection.size > 0 && !editingId && (
             <div style={styles.selToolbar}>
               <span style={{ fontSize: 12, color: "rgba(255,255,255,0.85)" }}>{selection.size} selected</span>
               <button style={styles.selBtn} onClick={duplicateSelection}><Copy size={14} /> Duplicate</button>
@@ -875,12 +912,12 @@ export default function MuMap({ mapId }) {
           {/* ════════ EMPTY STATE ════════ */}
           {tiles.length === 0 && loaded && (
             <div style={styles.emptyHint}>
-              Pick a shape from the left panel, or double-click the board to pin your first tile.
+              {readOnly ? "This map is empty so far." : "Pick a shape from the left panel, or double-click the board to pin your first tile."}
             </div>
           )}
 
           {/* ════════ MINI TOOLBAR — floats above the single selected tile ════════ */}
-          {singleSelectedTile && mode === "select" && !connecting && (() => {
+          {!readOnly && singleSelectedTile && mode === "select" && !connecting && (() => {
             const left = singleSelectedTile.x * zoom + pan.x + (singleSelectedTile.w * zoom) / 2;
             const top = singleSelectedTile.y * zoom + pan.y;
             return (
@@ -936,6 +973,7 @@ export default function MuMap({ mapId }) {
 // ═══════════════════════════════════════════════════════════════════════════
 const styles = {
   page: { fontFamily: FONT, height: "100vh", width: "100%", display: "flex", flexDirection: "column", background: PAGE_BG, overflow: "hidden", position: "relative" },
+  accessScreen: { fontFamily: FONT, height: "100vh", width: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: PAGE_BG, color: INK, textAlign: "center", padding: 20 },
 
   // Header
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, padding: "10px 16px", background: "#ffffff", borderBottom: `1px solid ${BORDER}` },
@@ -943,6 +981,9 @@ const styles = {
   headerSub: { fontSize: 11, color: INK_FAINT, marginTop: 1 },
   toolbarRow: { display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center" },
   separator: { width: 1, height: 22, background: BORDER, margin: "0 2px" },
+
+  // View-only badge
+  viewOnlyBadge: { display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 999, background: SUBTLE_BG, color: INK_SOFT, fontSize: 11.5, fontWeight: 700 },
 
   // Collaborator avatars
   avatarStack: { display: "flex", alignItems: "center", marginRight: 4 },
