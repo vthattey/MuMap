@@ -2,7 +2,7 @@
 // styles object alongside the TileNode extraction. Pulls color tokens from
 // the shared theme file rather than MuMap.jsx's local copies of the same
 // values, so this doesn't create an import cycle back into MuMap.jsx.
-import { FONT, INK, INK_SOFT, ACCENT } from "../../lib/theme.js";
+import { FONT, INK, INK_SOFT, ACCENT, BORDER } from "../../lib/theme.js";
 import { RESIZE_HANDLE } from "./tileGeometry.js";
 
 export const tileStyles = {
@@ -33,4 +33,19 @@ export const tileStyles = {
   textBodyInput: { display: "block", width: "100%", fontFamily: FONT, fontSize: 14, color: INK, lineHeight: 1.4, border: "none", background: "transparent", padding: 0, outline: "none", resize: "none", minHeight: 36 },
   richTextToolbar: { display: "flex", gap: 2, marginTop: 4 },
   richTextBtn: { width: 20, height: 18, display: "flex", alignItems: "center", justifyContent: "center", border: "none", borderRadius: 4, background: "rgba(31,41,55,0.08)", color: INK_SOFT, cursor: "pointer", padding: 0 },
+
+  // ── Flowchart shapes (lean chrome) ────────────────────────────────────
+  // Terminator/Process render as a plain box (outline-based selection, same
+  // as every other rectangular tile). Decision/Input-Output are clip-path
+  // silhouettes and need the wrapper + ring + fill layering below since a
+  // native `outline` can't trace a clip-path.
+  flowchartTile: { position: "absolute", boxSizing: "border-box", fontFamily: FONT, userSelect: "none", touchAction: "none", display: "flex", alignItems: "center", justifyContent: "center", padding: "8px 14px" },
+  clipWrap: { position: "absolute", boxSizing: "border-box", fontFamily: FONT, userSelect: "none", touchAction: "none", cursor: "grab", transition: "filter 0.15s" },
+  clipRing: { position: "absolute", zIndex: 0, transition: "inset 0.1s, background 0.1s" },
+  clipFill: { position: "absolute", inset: 0, zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "8px 14px", boxSizing: "border-box" },
+  flowchartLabel: { fontWeight: 600, fontSize: 13.5, color: INK, lineHeight: 1.3, width: "100%", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden", textOverflow: "ellipsis", wordBreak: "break-word", textAlign: "center" },
+  terminatorLabel: { fontWeight: 600, fontSize: 13, color: INK, lineHeight: 1.3, width: "100%", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", textOverflow: "ellipsis", wordBreak: "break-word", textAlign: "center" },
+  diamondLabel: { fontWeight: 600, fontSize: 12.5, color: INK, lineHeight: 1.28, width: "62%", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", textOverflow: "ellipsis", wordBreak: "break-word", textAlign: "center" },
+  ioLabel: { fontWeight: 600, fontSize: 13, color: INK, lineHeight: 1.28, width: "74%", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", textOverflow: "ellipsis", wordBreak: "break-word", textAlign: "center" },
+  flowchartLabelInput: { display: "block", fontFamily: FONT, fontWeight: 600, fontSize: 13.5, color: INK, lineHeight: 1.3, border: "none", background: "transparent", padding: 0, outline: "none", textAlign: "center" },
 };

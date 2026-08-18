@@ -1,8 +1,8 @@
 import React from "react";
 import { MessageSquare, Minus, Plus, Vote as VoteIcon } from "lucide-react";
-import { TILE_TYPES, STATUSES } from "../../lib/boardModel.js";
+import { TILE_TYPES, STATUSES, isFlowchartShape } from "../../lib/boardModel.js";
 import { ACCENT, BORDER } from "../../lib/theme.js";
-import { SIDES, dotPositionStyle } from "./tileGeometry.js";
+import { SIDES, dotPositionStyle, CLIP_PATHS, isClipShape, clipRingInset } from "./tileGeometry.js";
 import { tileStyles as styles } from "./tileStyles.js";
 import TileContentView from "./TileContentView.jsx";
 import TileContentEditor from "./TileContentEditor.jsx";
@@ -72,6 +72,107 @@ export default function TileNode({
             onPointerDown={(e) => onDotPointerDown(e, side)}
           />
         ))}
+      </div>
+    );
+  }
+
+  // Flowchart shapes (Terminator, Process, Decision, Input/Output) render
+  // lean — no badge/status/tags/vote-widget block, just one centered,
+  // clamped label — reusing the same "early return before the chrome"
+  // pattern the text-tile branch above uses, rather than threading a second
+  // chrome-less code path through the badge/status/tags JSX below.
+  if (t.kind === "tile" && isFlowchartShape(t.shape)) {
+    const labelStyle = t.shape === "terminator" ? styles.terminatorLabel
+      : t.shape === "decision" ? styles.diamondLabel
+      : t.shape === "parallelogram" ? styles.ioLabel
+      : styles.flowchartLabel;
+    const inputWidth = t.shape === "decision" ? "62%" : t.shape === "parallelogram" ? "74%" : "100%";
+
+    const commentBadge = (
+      <button className="comment-btn" style={{ ...styles.commentBadge, position: "absolute", top: 8, right: 8, zIndex: 3 }}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); onToggleComments(); }}
+        title="Comments">
+        <MessageSquare size={11} />
+        {comments.length > 0 && <span>{comments.length}</span>}
+      </button>
+    );
+
+    const label = isEditing ? (
+      <input
+        autoFocus
+        style={{ ...styles.flowchartLabelInput, fontSize: labelStyle.fontSize, width: inputWidth }}
+        value={t.title}
+        placeholder="Label"
+        onPointerDown={(e) => e.stopPropagation()}
+        onChange={(e) => dispatch({ type: "UPDATE_TILE", id: t.id, patch: { title: e.target.value }, _silent: true })}
+        onBlur={() => { dispatch({ type: "UPDATE_TILE", id: t.id, patch: { title: t.title } }); onEditingDone(); }}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur(); }}
+      />
+    ) : (
+      <span style={labelStyle}>{t.title || "Label"}</span>
+    );
+
+    const resizeHandle = <div className="resize-handle" style={styles.resizeHandle} onPointerDown={onResizeStart} />;
+    const dots = showDots && SIDES.map((side) => (
+      <div key={side} className="connector-dot"
+        style={{ ...styles.connectorDot, ...dotPositionStyle(side) }}
+        onPointerDown={(e) => onDotPointerDown(e, side)}
+      />
+    ));
+
+    if (isClipShape(t.shape)) {
+      const clipPath = CLIP_PATHS[t.shape];
+      const ringInset = clipRingInset(isSelected, isConnectTarget);
+      const ringColor = (isConnectTarget || isSelected) ? ACCENT : BORDER;
+      return (
+        <div key={t.id} className="tile clip-wrap"
+          style={{
+            ...styles.clipWrap,
+            left: t.x, top: t.y, width: t.w, height: t.h,
+            filter: isSelected
+              ? "drop-shadow(0 5px 12px rgba(31,41,55,0.24))"
+              : "drop-shadow(0 2px 4px rgba(31,41,55,0.14))",
+            zIndex: isSelected || isConnectSource ? 5 : 1,
+          }}
+          onPointerDown={onPointerDown}
+          onPointerEnter={onHoverEnter}
+          onPointerLeave={onHoverLeave}
+          onClick={onClick}
+          onDoubleClick={onDoubleClick}
+        >
+          <div style={{ ...styles.clipRing, clipPath, inset: ringInset, background: ringColor }} />
+          <div style={{ ...styles.clipFill, clipPath, background: t.color }}>{label}</div>
+          {commentBadge}
+          {resizeHandle}
+          {dots}
+        </div>
+      );
+    }
+
+    return (
+      <div key={t.id} className="tile"
+        style={{
+          ...styles.flowchartTile,
+          left: t.x, top: t.y, width: t.w, height: t.h,
+          background: t.color,
+          borderRadius: t.shape === "terminator" ? 999 : 14,
+          outline: isConnectTarget ? `3px solid ${ACCENT}` : isSelected ? `2px solid ${ACCENT}` : `1px solid ${BORDER}`,
+          outlineOffset: isSelected && !isConnectTarget ? 2 : 0,
+          cursor: "grab",
+          boxShadow: isSelected ? "0 6px 18px rgba(31,41,55,0.18)" : "0 2px 6px rgba(31,41,55,0.08)",
+          zIndex: isSelected || isConnectSource ? 5 : 1,
+        }}
+        onPointerDown={onPointerDown}
+        onPointerEnter={onHoverEnter}
+        onPointerLeave={onHoverLeave}
+        onClick={onClick}
+        onDoubleClick={onDoubleClick}
+      >
+        {commentBadge}
+        {label}
+        {resizeHandle}
+        {dots}
       </div>
     );
   }

@@ -11,7 +11,7 @@ import { useBoardSync } from "./hooks/useBoardSync.js";
 import { useMapPermission } from "./hooks/useMapPermission.js";
 import { useAuth } from "./auth/AuthContext.jsx";
 import { canComment, canEdit } from "./lib/permissions.js";
-import { TILE_TYPES, SHAPES, SWATCHES, STATUSES, makeTile, makeFrame, makeImageTile, makeTextTile, makeLink } from "./lib/boardModel.js";
+import { TILE_TYPES, SHAPES, SWATCHES, STATUSES, FLOWCHART_DEFAULT_COLORS, makeTile, makeFrame, makeImageTile, makeTextTile, makeLink } from "./lib/boardModel.js";
 import { TEMPLATES, materializeTemplate } from "./lib/templates.js";
 import { uploadTileImage } from "./lib/imageUpload.js";
 import ShareMapPanel from "./components/ShareMapPanel.jsx";
@@ -20,7 +20,46 @@ import DrawingLayer from "./components/board/DrawingLayer.jsx";
 import { RESIZE_HANDLE } from "./components/board/tileGeometry.js";
 import { tileStyles } from "./components/board/tileStyles.js";
 
-const SHAPE_ICONS = { square: Square, rectangle: RectangleHorizontal, circle: Circle };
+// Simple inline SVGs approximating the flowchart shapes themselves (a
+// stadium, a plain rectangle, a diamond, a parallelogram) rather than
+// reaching for an unrelated lucide glyph — keeps the icon legible as "this
+// is what you'll get" at 18px, per the approved mock. Same call signature
+// as the lucide icons above ({ size, strokeWidth, color }) so they drop
+// into the existing Object.entries(SHAPES) icon-rail/mini-toolbar/quick-
+// create loops unchanged.
+function TerminatorIcon({ size = 18, strokeWidth = 1.75, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth}>
+      <rect x="2" y="7" width="20" height="10" rx="5" />
+    </svg>
+  );
+}
+function ProcessIcon({ size = 18, strokeWidth = 1.75, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth}>
+      <rect x="3" y="5" width="18" height="14" rx="1.5" />
+    </svg>
+  );
+}
+function DecisionIcon({ size = 18, strokeWidth = 1.75, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth}>
+      <path d="M12 2 22 12 12 22 2 12Z" />
+    </svg>
+  );
+}
+function ParallelogramIcon({ size = 18, strokeWidth = 1.75, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth}>
+      <path d="M8 5h13l-4 14H3Z" />
+    </svg>
+  );
+}
+
+const SHAPE_ICONS = {
+  square: Square, rectangle: RectangleHorizontal, circle: Circle,
+  terminator: TerminatorIcon, process: ProcessIcon, decision: DecisionIcon, parallelogram: ParallelogramIcon,
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DESIGN TOKENS — full light theme
@@ -259,9 +298,9 @@ export default function MuMap({ mapId }) {
   // ═══════════════════════════════════════════════════════════════════════
   // TILE CRUD (through dispatch)
   // ═══════════════════════════════════════════════════════════════════════
-  const addTileAt = useCallback((type, bx, by, shape = "rectangle") => {
+  const addTileAt = useCallback((type, bx, by, shape = "rectangle", overrides) => {
     if (readOnly) return undefined;
-    const t = makeTile(type, shape, bx, by);
+    const t = makeTile(type, shape, bx, by, overrides);
     dispatch({ type: "ADD_TILE", tile: t });
     setEditingId(t.id);
     setSelection(new Set([t.id]));
@@ -276,7 +315,8 @@ export default function MuMap({ mapId }) {
     const r = el.getBoundingClientRect();
     const cx = (r.width / 2 - pan.x) / zoom - dims.w / 2 + (Math.random() - 0.5) * 60;
     const cy = (r.height / 2 - pan.y) / zoom - dims.h / 2 + (Math.random() - 0.5) * 60;
-    addTileAt("user-story", cx, cy, shapeKey);
+    const flowchartColor = FLOWCHART_DEFAULT_COLORS[shapeKey];
+    addTileAt("user-story", cx, cy, shapeKey, flowchartColor ? { color: flowchartColor } : undefined);
   }, [addTileAt, pan, zoom, readOnly]);
 
   const addFrameInView = useCallback(() => {
@@ -1407,9 +1447,10 @@ export default function MuMap({ mapId }) {
                 <div style={styles.quickCreateShapesRow}>
                   {Object.entries(SHAPES).map(([key, s]) => {
                     const Icon = SHAPE_ICONS[key];
+                    const flowchartColor = FLOWCHART_DEFAULT_COLORS[key];
                     return (
                       <button key={key} style={styles.quickCreateShapeBtn} title={s.label}
-                        onClick={() => createLinkedTile(quickCreate.type, key)}>
+                        onClick={() => createLinkedTile(quickCreate.type, key, flowchartColor ? { color: flowchartColor } : {})}>
                         <Icon size={16} strokeWidth={1.75} color={INK_SOFT} />
                       </button>
                     );
@@ -1570,7 +1611,11 @@ const styles = {
 
   // Mini toolbar — floats above the single selected tile (screen-space, not scaled by zoom)
   miniToolbar: { position: "absolute", transform: "translateX(-50%)", display: "flex", gap: 6, background: "#1f2937", padding: "6px 8px", borderRadius: 10, zIndex: 30, boxShadow: "0 6px 16px rgba(0,0,0,0.25)", whiteSpace: "nowrap" },
-  miniToolbarRow: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", maxWidth: 260 },
+  // maxWidth widened from 260: with 4 more SHAPES entries (flowchart shapes)
+  // the shape-picker row needs more horizontal room to avoid wrapping onto
+  // an extra line, which would grow the toolbar's height enough to
+  // overlap a short shape like Terminator (56px tall) sitting underneath it.
+  miniToolbarRow: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", maxWidth: 340 },
   miniSep: { width: 1, height: 20, background: "rgba(255,255,255,0.15)" },
   miniSelect: { padding: "4px 6px", borderRadius: 6, border: "none", fontSize: 11.5, fontWeight: 600, color: INK, background: "#fff", maxWidth: 130 },
   miniSwatch: { width: 18, height: 18, borderRadius: "50%", border: "none", cursor: "pointer", flexShrink: 0 },

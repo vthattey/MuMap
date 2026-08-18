@@ -54,6 +54,31 @@ export const TEMPLATES = [
       { from: "d4", to: "d3", directed: true },
     ],
   },
+  {
+    id: "flowchart",
+    name: "Flowchart",
+    description: "Start → process → decision → yes/no branches → end, ready to customize.",
+    // Coordinates mirror the approved mock's example flowchart exactly.
+    // Input/Output isn't used here per the plan — it's still available
+    // individually from the sidebar's shape row.
+    tiles: [
+      { id: "start", type: "user-story", shape: "terminator", x: 415, y: 40, title: "Start", color: "#93d9a8" },
+      { id: "fill", type: "user-story", shape: "process", x: 400, y: 132, title: "Fill out request form", color: "#7ec8e3" },
+      { id: "valid", type: "user-story", shape: "decision", x: 405, y: 240, title: "All fields valid?", color: "#f3c98b" },
+      { id: "submit", type: "user-story", shape: "process", x: 680, y: 269, title: "Submit to review queue", color: "#7ec8e3" },
+      { id: "errors", type: "user-story", shape: "process", x: 120, y: 269, title: "Show validation errors", color: "#7ec8e3" },
+      { id: "end-yes", type: "user-story", shape: "terminator", x: 695, y: 410, title: "End", color: "#93d9a8" },
+      { id: "end-no", type: "user-story", shape: "terminator", x: 135, y: 410, title: "End", color: "#93d9a8" },
+    ],
+    links: [
+      { from: "start", to: "fill", directed: true },
+      { from: "fill", to: "valid", directed: true },
+      { from: "valid", to: "submit", label: "Yes", directed: true },
+      { from: "valid", to: "errors", label: "No", directed: true },
+      { from: "submit", to: "end-yes", directed: true },
+      { from: "errors", to: "end-no", directed: true },
+    ],
+  },
 ];
 
 export function materializeTemplate(template, originX = 0, originY = 0) {

@@ -15,6 +15,37 @@ export const SHAPES = {
   square:    { label: "Square",    w: 160, h: 160 },
   rectangle: { label: "Rectangle", w: 220, h: 140 },
   circle:    { label: "Circle",    w: 170, h: 170 },
+  // Flowchart shapes (Architecture Diagrams suite, v1) — dimensions match
+  // the approved mock exactly. Any tile whose `shape` is one of these four
+  // renders lean (see isFlowchartShape below): no badge/status/tags/vote
+  // widget, just a single centered clamped label.
+  terminator:    { label: "Terminator",    w: 170, h: 56 },
+  process:       { label: "Process",       w: 200, h: 72 },
+  decision:      { label: "Decision",      w: 190, h: 130 },
+  parallelogram: { label: "Input/Output",  w: 200, h: 76 },
+};
+
+// The 4 flowchart shape keys — the single rule that decides "lean chrome or
+// full sticky-tile chrome" everywhere it matters (TileNode rendering, the
+// interface contract with backend-dev). Keep this list, not `kind`, as the
+// source of truth so switching an existing tile's shape via the mini
+// toolbar's shape row also switches its chrome, with no separate flag.
+export const FLOWCHART_SHAPES = ["terminator", "process", "decision", "parallelogram"];
+
+export function isFlowchartShape(shape) {
+  return FLOWCHART_SHAPES.includes(shape);
+}
+
+// Default fill per flowchart shape when added fresh from the sidebar/quick-
+// create menu — reuses 4 existing SWATCHES entries (green/blue/amber/
+// purple) rather than introducing new brand colors, per the approved mock.
+// Tiles added via addShapeInView otherwise all inherit the "user-story"
+// type's yellow, so this is looked up explicitly at the two add sites.
+export const FLOWCHART_DEFAULT_COLORS = {
+  terminator: "#93d9a8",
+  process: "#7ec8e3",
+  decision: "#f3c98b",
+  parallelogram: "#d8b4f0",
 };
 
 export const SWATCHES = [

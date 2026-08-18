@@ -1,0 +1,525 @@
+<title>Flowchart Shapes</title>
+<style>
+  :root{
+    --font:'Inter',system-ui,sans-serif;
+    --ink:#1f2937;
+    --ink-soft:rgba(31,41,55,0.62);
+    --ink-faint:rgba(31,41,55,0.45);
+    --border:#e5e7eb;
+    --subtle:#f3f4f6;
+    --accent:#4f46e5;
+    --accent-soft:rgba(79,70,229,0.1);
+    --board-bg:#ffffff;
+    --link-color:#94a3b8;
+    --page-bg:#eef0f4;
+    --panel-bg:#ffffff;
+    --danger:#dc2626;
+  }
+  *{box-sizing:border-box;}
+  body{background:var(--page-bg);color:var(--ink);font-family:var(--font);margin:0;}
+  .page{max-width:1140px;margin:0 auto;padding:40px 24px 90px;}
+
+  /* ---------- page-level chrome (mock packaging, not real app UI) ---------- */
+  .hero{padding:28px 32px;background:linear-gradient(135deg,#4f46e5,#4338ca);border-radius:16px;color:#fff;margin-bottom:22px;}
+  .hero .eyebrow{font-size:11.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;opacity:0.75;margin-bottom:8px;}
+  .hero h1{font-size:26px;font-weight:800;margin:0 0 8px;letter-spacing:-0.3px;}
+  .hero p{font-size:14px;line-height:1.55;margin:0;max-width:760px;opacity:0.92;}
+  .jumpnav{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:36px;}
+  .jumpnav a{font-size:12.5px;font-weight:600;color:var(--accent);background:var(--accent-soft);padding:7px 13px;border-radius:999px;text-decoration:none;}
+  .jumpnav a:hover{background:rgba(79,70,229,0.18);}
+
+  section{margin-bottom:56px;}
+  .section-eyebrow{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:6px;}
+  .section-title{font-size:20px;font-weight:800;color:var(--ink);margin:0 0 8px;letter-spacing:-0.2px;}
+  .section-desc{font-size:13.5px;line-height:1.6;color:var(--ink-soft);max-width:760px;margin:0 0 20px;}
+
+  .panel{background:var(--panel-bg);border:1px solid var(--border);border-radius:14px;padding:24px;box-shadow:0 1px 2px rgba(31,41,55,0.04);}
+
+  .callout{display:flex;gap:10px;background:#fffbeb;border:1px dashed #d97706;border-radius:10px;padding:12px 14px;font-size:12.5px;line-height:1.55;color:#92400e;margin-top:16px;}
+  .callout b{color:#78350f;}
+  .callout-accent{background:var(--accent-soft);border:1px dashed var(--accent);color:#3730a3;}
+  .callout-accent b{color:#312e81;}
+
+  /* ---------- app shell replica (sidebar + header fragments) ---------- */
+  .app-shell{display:flex;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:#fff;}
+  .app-sidebar{width:52px;flex-shrink:0;background:var(--panel-bg);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 8px;position:relative;}
+  .side-icon{width:36px;height:36px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:none;background:transparent;border-radius:8px;cursor:pointer;color:var(--ink-soft);position:relative;}
+  .side-icon:hover{background:var(--subtle);}
+  .side-icon.active{background:var(--accent-soft);color:var(--accent);}
+  .side-icon.new-shape{color:var(--ink-soft);}
+  .side-divider{width:28px;height:1px;background:var(--border);margin:4px 0;}
+  .new-ring{position:absolute;inset:-3px;border:1.5px dashed var(--accent);border-radius:11px;pointer-events:none;}
+  .new-tag{position:absolute;left:calc(100% + 12px);top:50%;transform:translateY(-50%);background:var(--accent);color:#fff;font-size:11px;font-weight:700;padding:5px 10px;border-radius:7px;white-space:nowrap;}
+  .new-tag::before{content:"";position:absolute;left:-5px;top:50%;transform:translateY(-50%);border:5px solid transparent;border-right-color:var(--accent);}
+  .app-canvas-note{flex:1;display:flex;align-items:center;justify-content:center;background:
+      repeating-linear-gradient(0deg,transparent,transparent 27px,rgba(31,41,55,0.035) 27px,rgba(31,41,55,0.035) 28px),
+      repeating-linear-gradient(90deg,transparent,transparent 27px,rgba(31,41,55,0.035) 27px,rgba(31,41,55,0.035) 28px);
+      min-height:300px;color:var(--ink-faint);font-size:12.5px;text-align:center;padding:20px;}
+
+  /* templates flyout */
+  .tpl-flyout{width:260px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(31,41,55,0.14);padding:6px;}
+  .tpl-item{display:flex;flex-direction:column;gap:2px;width:100%;text-align:left;padding:9px 10px;border-radius:7px;border:none;background:transparent;cursor:pointer;font-family:var(--font);position:relative;}
+  .tpl-item:hover{background:var(--subtle);}
+  .tpl-item .tpl-name{font-size:12.5px;font-weight:700;color:var(--ink);}
+  .tpl-item .tpl-desc{font-size:11px;color:var(--ink-soft);line-height:1.4;}
+  .tpl-item.new::after{content:"NEW";position:absolute;right:10px;top:10px;background:var(--accent);color:#fff;font-size:8.5px;font-weight:800;letter-spacing:0.4px;padding:2px 6px;border-radius:999px;}
+
+  /* ---------- shared tile/shape chrome (mirrors TileNode.jsx / tileStyles.js) ---------- */
+  .tile-base{position:absolute;font-family:var(--font);user-select:none;box-shadow:0 2px 6px rgba(31,41,55,0.08);border:1px solid var(--border);border-radius:14px;display:flex;align-items:center;justify-content:center;text-align:center;padding:10px 16px;cursor:grab;transition:box-shadow .15s,outline-color .15s;outline:1px solid var(--border);outline-offset:0;}
+  .tile-base:hover{box-shadow:0 4px 12px rgba(31,41,55,0.12);}
+  .tile-base:hover .resize-handle{opacity:1;}
+  .tile-base:hover .dot{opacity:1;}
+  .tile-base.selected{outline:2px solid var(--accent);outline-offset:2px;box-shadow:0 6px 18px rgba(31,41,55,0.18);}
+  .tile-base.selected .dot,.tile-base.selected .resize-handle{opacity:1;}
+  .tile-base.connect-target{outline:3px solid var(--accent);outline-offset:0;}
+  .tile-base.connect-target .dot{opacity:1;}
+  .shape-terminator{border-radius:999px;}
+  .shape-process{border-radius:14px;}
+
+  .clip-wrap{position:absolute;cursor:grab;filter:drop-shadow(0 2px 4px rgba(31,41,55,0.14));transition:filter .15s;}
+  .clip-wrap:hover{filter:drop-shadow(0 3px 8px rgba(31,41,55,0.18));}
+  .clip-wrap:hover .resize-handle{opacity:1;}
+  .clip-wrap:hover .dot{opacity:1;}
+  .clip-wrap.selected{filter:drop-shadow(0 5px 12px rgba(31,41,55,0.24));}
+  .clip-wrap.selected .dot,.clip-wrap.selected .resize-handle{opacity:1;}
+  .clip-ring{position:absolute;inset:-1px;background:var(--border);z-index:0;}
+  .clip-wrap.selected .clip-ring{inset:-4px;background:var(--accent);}
+  .clip-wrap.connect-target .clip-ring{inset:-3px;background:var(--accent);}
+  .clip-fill{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:1;}
+  .shape-decision{clip-path:polygon(50% 0%,100% 50%,50% 100%,0% 50%);}
+  .shape-parallelogram{clip-path:polygon(15% 0%,100% 0%,85% 100%,0% 100%);}
+
+  .tile-label{font-weight:600;font-size:13.5px;color:var(--ink);line-height:1.3;width:100%;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;word-break:break-word;}
+  .tile-label.terminator-label{font-size:13px;-webkit-line-clamp:2;}
+  .diamond-label{font-weight:600;font-size:12.5px;color:var(--ink);line-height:1.28;width:62%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;word-break:break-word;text-align:center;}
+  .io-label{font-weight:600;font-size:13px;color:var(--ink);line-height:1.28;width:74%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;word-break:break-word;text-align:center;}
+
+  .comment-badge{position:absolute;top:8px;right:8px;display:flex;align-items:center;gap:3px;height:20px;padding:0 5px;border-radius:999px;background:rgba(31,41,55,0.12);color:rgba(31,41,55,0.65);font-size:10px;font-weight:700;z-index:3;pointer-events:none;}
+  .resize-handle{position:absolute;bottom:0;right:0;width:14px;height:14px;opacity:0;background:linear-gradient(135deg,transparent 40%,rgba(31,41,55,0.3) 40%,rgba(31,41,55,0.3) 50%,transparent 50%,transparent 70%,rgba(31,41,55,0.3) 70%);border-radius:0 0 4px 0;transition:opacity .15s;z-index:3;}
+  .dot{position:absolute;width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid var(--accent);box-shadow:0 1px 3px rgba(31,41,55,0.3);opacity:0;transition:opacity .15s;z-index:4;}
+  .dot-top{top:0;left:50%;transform:translate(-50%,-50%);}
+  .dot-right{top:50%;left:100%;transform:translate(-50%,-50%);}
+  .dot-bottom{top:100%;left:50%;transform:translate(-50%,-50%);}
+  .dot-left{top:50%;left:0;transform:translate(-50%,-50%);}
+
+  /* ---------- gallery ---------- */
+  .gallery-row{display:flex;flex-wrap:wrap;gap:40px;align-items:flex-end;padding:30px 10px 10px;}
+  .gallery-item{display:flex;flex-direction:column;align-items:center;gap:14px;}
+  .gallery-stage{position:relative;}
+  .gallery-cap{text-align:center;}
+  .gallery-cap .cap-name{font-size:12.5px;font-weight:700;color:var(--ink);}
+  .gallery-cap .cap-dims{font-size:11px;color:var(--ink-faint);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:1px;}
+
+  .wrap-label-row{display:flex;flex-wrap:wrap;gap:40px;padding:26px 10px 10px;align-items:flex-start;}
+
+  /* ---------- affordance states ---------- */
+  .aff-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:22px;padding:10px;}
+  .aff-cell{display:flex;flex-direction:column;align-items:center;gap:12px;}
+  .aff-stage{position:relative;width:100%;height:110px;display:flex;align-items:center;justify-content:center;background:
+      repeating-linear-gradient(0deg,transparent,transparent 21px,rgba(31,41,55,0.03) 21px,rgba(31,41,55,0.03) 22px),
+      repeating-linear-gradient(90deg,transparent,transparent 21px,rgba(31,41,55,0.03) 21px,rgba(31,41,55,0.03) 22px);
+      border-radius:8px;}
+  .aff-label{font-size:11.5px;font-weight:700;color:var(--ink-soft);text-align:center;}
+  .aff-sub{font-size:10.5px;color:var(--ink-faint);text-align:center;line-height:1.4;}
+
+  /* ---------- flowchart example ---------- */
+  .flow-frame{background:#fff;border:1px solid var(--border);border-radius:12px;overflow:auto;}
+  .flow-canvas{position:relative;width:1000px;height:500px;background:var(--board-bg);}
+  .flow-hint{position:absolute;top:10px;left:14px;font-size:11px;color:var(--ink-faint);background:rgba(255,255,255,0.85);padding:3px 8px;border-radius:999px;border:1px solid var(--border);pointer-events:none;z-index:5;}
+
+  .legend{display:flex;flex-wrap:wrap;gap:18px;margin-top:16px;}
+  .legend-item{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-soft);}
+  .legend-swatch{width:22px;height:22px;border:1px solid var(--border);flex-shrink:0;}
+  .legend-swatch.term{border-radius:999px;background:#93d9a8;}
+  .legend-swatch.proc{border-radius:5px;background:#7ec8e3;}
+  .legend-swatch.dec{background:#f3c98b;clip-path:polygon(50% 0%,100% 50%,50% 100%,0% 50%);border:none;}
+  .legend-swatch.io{background:#d8b4f0;clip-path:polygon(15% 0%,100% 0%,85% 100%,0% 100%);border:none;}
+
+  /* ---------- decisions list ---------- */
+  .decisions-panel{background:#fff;border:1px solid var(--border);border-radius:14px;padding:26px 28px;}
+  .decisions-panel h3{font-size:14.5px;font-weight:800;margin:0 0 4px;color:var(--ink);}
+  .decisions-panel .sub{font-size:12px;color:var(--ink-soft);margin:0 0 18px;}
+  .decisions-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:14px;}
+  .decisions-list li{display:flex;gap:12px;font-size:13px;line-height:1.55;color:var(--ink);}
+  .dnum{flex-shrink:0;width:22px;height:22px;border-radius:6px;background:var(--accent-soft);color:var(--accent);font-size:11.5px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:1px;}
+  .decisions-list b{color:var(--ink);}
+  .decisions-list .muted{color:var(--ink-soft);}
+
+  footer.foot{margin-top:50px;font-size:11.5px;color:var(--ink-faint);text-align:center;}
+</style>
+
+<div class="page">
+
+  <div class="hero">
+    <div class="eyebrow">MuMap &middot; Architecture Diagrams Suite &middot; v1 mock</div>
+    <h1>Flowchart shapes</h1>
+    <p>Static mock of the 4 new flowchart node shapes (Terminator, Process, Decision, Input/Output), their sidebar entries, and the new "Flowchart" starter template &mdash; shown riding on MuMap's existing sticky-note board, tile chrome, and elbow-routed connectors. Click any shape below to toggle its selected state; hover a shape to preview its hover affordances.</p>
+  </div>
+
+  <div class="jumpnav">
+    <a href="#sidebar-section">(a) Sidebar</a>
+    <a href="#gallery-section">(b) The 4 shapes</a>
+    <a href="#affordance-section">(d) Selection &amp; hover</a>
+    <a href="#example-section">(c) Example flowchart</a>
+    <a href="#decisions-section">Decisions to confirm</a>
+  </div>
+
+  <!-- ══════════════════════════ (a) SIDEBAR ══════════════════════════ -->
+  <section id="sidebar-section">
+    <div class="section-eyebrow">(a) Sidebar</div>
+    <h2 class="section-title">Updated shape row + new template entry</h2>
+    <p class="section-desc">The 4 new shapes are appended to the icon rail's existing shape row, after Circle, in the same unlabeled 52px icon-button style as every other tool. The dashed callouts below are mock annotations, not real UI &mdash; they exist only to point out what's new in this mock.</p>
+
+    <div class="app-shell">
+      <div class="app-sidebar">
+        <!-- mode toggle -->
+        <button class="side-icon active" title="Select">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 4l7.07 17 2.51-7.39L21 11.07z"/></svg>
+        </button>
+        <button class="side-icon" title="Pan (Space)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M6 14v2a8 8 0 0 0 16 0v-2"/></svg>
+        </button>
+        <div class="side-divider"></div>
+
+        <!-- existing shapes -->
+        <button class="side-icon" title="Add Square"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
+        <button class="side-icon" title="Add Rectangle"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="2" y="6" width="20" height="12" rx="2"/></svg></button>
+        <button class="side-icon" title="Add Circle"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/></svg></button>
+
+        <!-- NEW flowchart shapes -->
+        <div style="position:relative;">
+          <button class="side-icon new-shape" title="Add Terminator"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="2" y="7" width="20" height="10" rx="5"/></svg></button>
+          <div class="new-ring"></div>
+        </div>
+        <button class="side-icon new-shape" title="Add Process"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="5" width="18" height="14" rx="1.5"/></svg></button>
+        <button class="side-icon new-shape" title="Add Decision"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 2 22 12 12 22 2 12Z"/></svg></button>
+        <div style="position:relative;">
+          <button class="side-icon new-shape" title="Add Input/Output"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M8 5h13l-4 14H3Z"/></svg></button>
+          <div class="new-ring"></div>
+          <div class="new-tag">4 new shapes</div>
+        </div>
+
+        <button class="side-icon" title="Add text"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 6h16M12 6v14"/></svg></button>
+        <button class="side-icon" title="Add a frame"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 3v18M20 3v18M2 8h4M18 8h4M2 16h4M18 16h4"/></svg></button>
+        <button class="side-icon" title="Add an image or GIF"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.75"/><path d="M21 16l-5.5-5.5L3 20"/></svg></button>
+
+        <div class="side-divider"></div>
+        <button class="side-icon" title="Freehand pen"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 20l3.5-1 10-10-2.5-2.5-10 10Z"/><path d="M14.5 5.5l2.5 2.5"/></svg></button>
+        <button class="side-icon active" title="Insert a template" id="tpl-btn" onclick="toggleTemplates()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></button>
+
+        <div id="tpl-flyout" class="tpl-flyout" style="position:absolute;left:56px;top:210px;z-index:20;">
+          <button class="tpl-item"><span class="tpl-name">Story Map</span><span class="tpl-desc">A backbone of user journeys with supporting stories underneath each step.</span></button>
+          <button class="tpl-item"><span class="tpl-name">Retro</span><span class="tpl-desc">Start / Stop / Continue &mdash; a classic team retrospective layout.</span></button>
+          <button class="tpl-item"><span class="tpl-name">Dependency Map</span><span class="tpl-desc">A chain of work items with directed dependency arrows already drawn.</span></button>
+          <button class="tpl-item new"><span class="tpl-name">Flowchart</span><span class="tpl-desc">Start &rarr; process &rarr; decision &rarr; yes/no branches &rarr; end, ready to customize.</span></button>
+        </div>
+      </div>
+      <div class="app-canvas-note">Board canvas (see the assembled example in section (c) below)</div>
+    </div>
+
+    <div class="callout callout-accent">
+      <span>&#128161;</span>
+      <div><b>Icon choice:</b> simple inline SVGs approximating the shapes themselves (a stadium, a plain rectangle, a diamond, a parallelogram) rather than reaching for an unrelated lucide glyph &mdash; keeps the icon legible as "this is what you'll get" at 18px. Real implementation may substitute actual lucide-react primitives if suitable ones exist.</div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ (b) SHAPE GALLERY ══════════════════════════ -->
+  <section id="gallery-section">
+    <div class="section-eyebrow">(b) The 4 new shapes</div>
+    <h2 class="section-title">Rendered at true default size, lean chrome</h2>
+    <p class="section-desc">No status pill, points badge, tags row, or vote widget &mdash; just a single centered label. The comment icon stays (generic annotation, useful on any tile); it only shows a count once a comment exists, same as regular sticky tiles. Click a shape to toggle selection.</p>
+
+    <div class="panel">
+      <div class="gallery-row">
+        <div class="gallery-item">
+          <div class="gallery-stage" style="width:170px;height:56px;">
+            <div class="tile-base shape-terminator" style="left:0;top:0;width:170px;height:56px;background:#93d9a8;" onclick="toggleSelect(this,event)">
+              <span class="comment-badge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg></span>
+              <span class="tile-label terminator-label">Start</span>
+              <span class="resize-handle"></span>
+              <span class="dot dot-top"></span><span class="dot dot-right"></span><span class="dot dot-bottom"></span><span class="dot dot-left"></span>
+            </div>
+          </div>
+          <div class="gallery-cap"><div class="cap-name">Terminator</div><div class="cap-dims">170 &times; 56 &middot; radius = h/2 &middot; #93d9a8</div></div>
+        </div>
+
+        <div class="gallery-item">
+          <div class="gallery-stage" style="width:200px;height:72px;">
+            <div class="tile-base shape-process" style="left:0;top:0;width:200px;height:72px;background:#7ec8e3;" onclick="toggleSelect(this,event)">
+              <span class="comment-badge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg><span>2</span></span>
+              <span class="tile-label">Fill out request form</span>
+              <span class="resize-handle"></span>
+              <span class="dot dot-top"></span><span class="dot dot-right"></span><span class="dot dot-bottom"></span><span class="dot dot-left"></span>
+            </div>
+          </div>
+          <div class="gallery-cap"><div class="cap-name">Process</div><div class="cap-dims">200 &times; 72 &middot; radius 14 (unchanged from sticky tiles) &middot; #7ec8e3</div></div>
+        </div>
+
+        <div class="gallery-item">
+          <div class="gallery-stage" style="width:190px;height:130px;">
+            <div class="clip-wrap" style="left:0;top:0;width:190px;height:130px;" onclick="toggleSelect(this,event)">
+              <div class="clip-ring shape-decision"></div>
+              <div class="clip-fill shape-decision" style="background:#f3c98b;"><span class="diamond-label">Approved?</span></div>
+              <span class="comment-badge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg></span>
+              <span class="resize-handle"></span>
+              <span class="dot dot-top"></span><span class="dot dot-right"></span><span class="dot dot-bottom"></span><span class="dot dot-left"></span>
+            </div>
+          </div>
+          <div class="gallery-cap"><div class="cap-name">Decision</div><div class="cap-dims">190 &times; 130 &middot; CSS clip-path diamond &middot; #f3c98b</div></div>
+        </div>
+
+        <div class="gallery-item">
+          <div class="gallery-stage" style="width:200px;height:76px;">
+            <div class="clip-wrap" style="left:0;top:0;width:200px;height:76px;" onclick="toggleSelect(this,event)">
+              <div class="clip-ring shape-parallelogram"></div>
+              <div class="clip-fill shape-parallelogram" style="background:#d8b4f0;"><span class="io-label">Customer record</span></div>
+              <span class="comment-badge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg></span>
+              <span class="resize-handle"></span>
+              <span class="dot dot-top"></span><span class="dot dot-right"></span><span class="dot dot-bottom"></span><span class="dot dot-left"></span>
+            </div>
+          </div>
+          <div class="gallery-cap"><div class="cap-name">Input/Output</div><div class="cap-dims">200 &times; 76 &middot; CSS clip-path parallelogram (15% skew) &middot; #d8b4f0</div></div>
+        </div>
+      </div>
+
+      <div style="border-top:1px solid var(--border);margin:6px 10px 0;"></div>
+
+      <p class="section-desc" style="margin:20px 10px 0;"><b style="color:var(--ink);">Long-label handling</b> &mdash; process rectangles wrap and clamp at 3 lines with an ellipsis; diamonds are the tight case: the label sits in a centered ~62%-width safe zone (clear of the sloped edges) and clamps at 2 lines with an ellipsis, rather than auto-shrinking the font or letting text overflow outside the diamond the way draw.io does.</p>
+      <div class="wrap-label-row">
+        <div class="gallery-item">
+          <div class="gallery-stage" style="width:190px;height:130px;">
+            <div class="clip-wrap" style="left:0;top:0;width:190px;height:130px;">
+              <div class="clip-ring shape-decision"></div>
+              <div class="clip-fill shape-decision" style="background:#f3c98b;"><span class="diamond-label">Have all required approvals been collected from every stakeholder?</span></div>
+            </div>
+          </div>
+          <div class="gallery-cap"><div class="cap-name">Decision &middot; long label</div><div class="cap-dims">clamps to 2 lines + ellipsis</div></div>
+        </div>
+        <div class="gallery-item">
+          <div class="gallery-stage" style="width:200px;height:72px;">
+            <div class="tile-base shape-process" style="left:0;top:0;width:200px;height:72px;background:#7ec8e3;">
+              <span class="tile-label">Notify the billing team and finance lead once the invoice has been fully reconciled</span>
+            </div>
+          </div>
+          <div class="gallery-cap"><div class="cap-name">Process &middot; long label</div><div class="cap-dims">clamps to 3 lines + ellipsis</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ (d) SELECTION / HOVER AFFORDANCES ══════════════════════════ -->
+  <section id="affordance-section">
+    <div class="section-eyebrow">(d) Selection &amp; hover affordances</div>
+    <h2 class="section-title">These behave like every other tile, not a special case</h2>
+    <p class="section-desc">Same resize handle, connector dots, and outline treatment regular sticky tiles already have. Rectangle-ish shapes (Terminator, Process) use the native <code>outline</code> property, same as today. Decision and Input/Output use CSS <code>clip-path</code> for their fill, and a native outline would just draw a rectangle around the bounding box &mdash; so their selection ring is a second clipped layer sized a few px larger behind the fill, giving a diamond/parallelogram-shaped ring instead. Hover this row for real; the "Selected" and "Connecting" columns are pinned open so you can see them without needing a live drag.</p>
+
+    <div class="panel">
+      <div class="aff-grid">
+        <div class="aff-cell">
+          <div class="aff-stage">
+            <div class="tile-base shape-process" style="position:relative;left:0;top:0;width:140px;height:60px;background:#7ec8e3;">
+              <span class="tile-label" style="font-size:12px;">Process</span>
+            </div>
+          </div>
+          <div class="aff-label">Rest</div>
+          <div class="aff-sub">1px border, no dots, no resize handle</div>
+        </div>
+        <div class="aff-cell">
+          <div class="aff-stage">
+            <div class="tile-base shape-process force-hover" style="position:relative;left:0;top:0;width:140px;height:60px;background:#7ec8e3;">
+              <span class="tile-label" style="font-size:12px;">Process</span>
+              <span class="resize-handle" style="opacity:1;"></span>
+              <span class="dot dot-top" style="opacity:1;"></span><span class="dot dot-right" style="opacity:1;"></span><span class="dot dot-bottom" style="opacity:1;"></span><span class="dot dot-left" style="opacity:1;"></span>
+            </div>
+          </div>
+          <div class="aff-label">Hover / hovered-while-selected</div>
+          <div class="aff-sub">resize handle + 4 connector dots fade in</div>
+        </div>
+        <div class="aff-cell">
+          <div class="aff-stage">
+            <div class="tile-base shape-process selected" style="position:relative;left:0;top:0;width:140px;height:60px;background:#7ec8e3;">
+              <span class="tile-label" style="font-size:12px;">Process</span>
+              <span class="resize-handle"></span>
+              <span class="dot dot-top"></span><span class="dot dot-right"></span><span class="dot dot-bottom"></span><span class="dot dot-left"></span>
+            </div>
+          </div>
+          <div class="aff-label">Selected</div>
+          <div class="aff-sub">2px accent outline, offset 2px, raised shadow</div>
+        </div>
+        <div class="aff-cell">
+          <div class="aff-stage">
+            <div class="tile-base shape-process connect-target" style="position:relative;left:0;top:0;width:140px;height:60px;background:#7ec8e3;">
+              <span class="tile-label" style="font-size:12px;">Process</span>
+              <span class="dot dot-top"></span><span class="dot dot-right"></span><span class="dot dot-bottom"></span><span class="dot dot-left"></span>
+            </div>
+          </div>
+          <div class="aff-label">Connecting (drop target)</div>
+          <div class="aff-sub">3px accent outline, no offset</div>
+        </div>
+
+        <div class="aff-cell">
+          <div class="aff-stage">
+            <div class="clip-wrap" style="position:relative;left:0;top:0;width:130px;height:96px;">
+              <div class="clip-ring shape-decision"></div>
+              <div class="clip-fill shape-decision" style="background:#f3c98b;"><span class="diamond-label" style="font-size:11px;">Valid?</span></div>
+            </div>
+          </div>
+          <div class="aff-label">Rest</div>
+          <div class="aff-sub">1px ring layer (mimics border)</div>
+        </div>
+        <div class="aff-cell">
+          <div class="aff-stage">
+            <div class="clip-wrap" style="position:relative;left:0;top:0;width:130px;height:96px;">
+              <div class="clip-ring shape-decision"></div>
+              <div class="clip-fill shape-decision" style="background:#f3c98b;"><span class="diamond-label" style="font-size:11px;">Valid?</span></div>
+              <span class="resize-handle" style="opacity:1;"></span>
+              <span class="dot dot-top" style="opacity:1;"></span><span class="dot dot-right" style="opacity:1;"></span><span class="dot dot-bottom" style="opacity:1;"></span><span class="dot dot-left" style="opacity:1;"></span>
+            </div>
+          </div>
+          <div class="aff-label">Hover</div>
+          <div class="aff-sub">dots land on the diamond's 4 vertices (bounding-box midpoints)</div>
+        </div>
+        <div class="aff-cell">
+          <div class="aff-stage">
+            <div class="clip-wrap selected" style="position:relative;left:0;top:0;width:130px;height:96px;">
+              <div class="clip-ring shape-decision"></div>
+              <div class="clip-fill shape-decision" style="background:#f3c98b;"><span class="diamond-label" style="font-size:11px;">Valid?</span></div>
+              <span class="resize-handle"></span>
+              <span class="dot dot-top"></span><span class="dot dot-right"></span><span class="dot dot-bottom"></span><span class="dot dot-left"></span>
+            </div>
+          </div>
+          <div class="aff-label">Selected</div>
+          <div class="aff-sub">ring layer grows to inset -4px, accent color</div>
+        </div>
+        <div class="aff-cell">
+          <div class="aff-stage">
+            <div class="clip-wrap connect-target" style="position:relative;left:0;top:0;width:130px;height:96px;">
+              <div class="clip-ring shape-decision"></div>
+              <div class="clip-fill shape-decision" style="background:#f3c98b;"><span class="diamond-label" style="font-size:11px;">Valid?</span></div>
+              <span class="dot dot-top"></span><span class="dot dot-right"></span><span class="dot dot-bottom"></span><span class="dot dot-left"></span>
+            </div>
+          </div>
+          <div class="aff-label">Connecting (drop target)</div>
+          <div class="aff-sub">ring inset -3px, no gap</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ (c) EXAMPLE FLOWCHART / TEMPLATE ══════════════════════════ -->
+  <section id="example-section">
+    <div class="section-eyebrow">(c) "Flowchart" starter template</div>
+    <h2 class="section-title">What inserting the template drops onto the board</h2>
+    <p class="section-desc">Start &rarr; process &rarr; decision &rarr; Yes/No branches (link labels) &rarr; end. Built entirely from the existing tile + link system: elbow-routed connectors, directed arrowheads, and text labels are all unchanged from Tier 1 &mdash; no new connector styles were introduced. Click any node to select it; click empty canvas to deselect.</p>
+
+    <div class="flow-frame">
+      <div class="flow-canvas" id="flow-canvas" onclick="clearAllSelected()">
+        <div class="flow-hint">Board canvas &middot; click a node to select</div>
+
+        <svg width="1000" height="500" style="position:absolute;left:0;top:0;pointer-events:none;">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+            </marker>
+          </defs>
+          <path d="M500 96 L500 132" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow)"/>
+          <path d="M500 204 L500 240" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow)"/>
+          <path d="M595 305 L680 305" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow)"/>
+          <path d="M405 305 L320 305" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow)"/>
+          <path d="M780 341 L780 410" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow)"/>
+          <path d="M220 341 L220 410" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow)"/>
+          <text x="637" y="297" text-anchor="middle" font-size="11" font-weight="600" font-family="Inter, sans-serif" fill="rgba(31,41,55,0.62)" stroke="#ffffff" stroke-width="4" paint-order="stroke">Yes</text>
+          <text x="362" y="297" text-anchor="middle" font-size="11" font-weight="600" font-family="Inter, sans-serif" fill="rgba(31,41,55,0.62)" stroke="#ffffff" stroke-width="4" paint-order="stroke">No</text>
+        </svg>
+
+        <div class="tile-base shape-terminator" style="left:415px;top:40px;width:170px;height:56px;background:#93d9a8;" onclick="toggleSelect(this,event)">
+          <span class="tile-label terminator-label">Start</span>
+          <span class="resize-handle"></span>
+          <span class="dot dot-top"></span><span class="dot dot-right"></span><span class="dot dot-bottom"></span><span class="dot dot-left"></span>
+        </div>
+
+        <div class="tile-base shape-process" style="left:400px;top:132px;width:200px;height:72px;background:#7ec8e3;" onclick="toggleSelect(this,event)">
+          <span class="comment-badge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg></span>
+          <span class="tile-label">Fill out request form</span>
+          <span class="resize-handle"></span>
+          <span class="dot dot-top"></span><span class="dot dot-right"></span><span class="dot dot-bottom"></span><span class="dot dot-left"></span>
+        </div>
+
+        <div class="clip-wrap" style="left:405px;top:240px;width:190px;height:130px;" onclick="toggleSelect(this,event)">
+          <div class="clip-ring shape-decision"></div>
+          <div class="clip-fill shape-decision" style="background:#f3c98b;"><span class="diamond-label">All fields valid?</span></div>
+          <span class="resize-handle"></span>
+          <span class="dot dot-top"></span><span class="dot dot-right"></span><span class="dot dot-bottom"></span><span class="dot dot-left"></span>
+        </div>
+
+        <div class="tile-base shape-process" style="left:680px;top:269px;width:200px;height:72px;background:#7ec8e3;" onclick="toggleSelect(this,event)">
+          <span class="tile-label">Submit to review queue</span>
+          <span class="resize-handle"></span>
+          <span class="dot dot-top"></span><span class="dot dot-right"></span><span class="dot dot-bottom"></span><span class="dot dot-left"></span>
+        </div>
+
+        <div class="tile-base shape-process" style="left:120px;top:269px;width:200px;height:72px;background:#7ec8e3;" onclick="toggleSelect(this,event)">
+          <span class="comment-badge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg><span>1</span></span>
+          <span class="tile-label">Show validation errors</span>
+          <span class="resize-handle"></span>
+          <span class="dot dot-top"></span><span class="dot dot-right"></span><span class="dot dot-bottom"></span><span class="dot dot-left"></span>
+        </div>
+
+        <div class="tile-base shape-terminator" style="left:695px;top:410px;width:170px;height:56px;background:#93d9a8;" onclick="toggleSelect(this,event)">
+          <span class="tile-label terminator-label">End</span>
+          <span class="resize-handle"></span>
+          <span class="dot dot-top"></span><span class="dot dot-right"></span><span class="dot dot-bottom"></span><span class="dot dot-left"></span>
+        </div>
+
+        <div class="tile-base shape-terminator" style="left:135px;top:410px;width:170px;height:56px;background:#93d9a8;" onclick="toggleSelect(this,event)">
+          <span class="tile-label terminator-label">End</span>
+          <span class="resize-handle"></span>
+          <span class="dot dot-top"></span><span class="dot dot-right"></span><span class="dot dot-bottom"></span><span class="dot dot-left"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><span class="legend-swatch term"></span>Terminator &mdash; start/end</div>
+      <div class="legend-item"><span class="legend-swatch proc"></span>Process &mdash; a step</div>
+      <div class="legend-item"><span class="legend-swatch dec"></span>Decision &mdash; branch point</div>
+      <div class="legend-item"><span class="legend-swatch io"></span>Input/Output &mdash; shown in the shape gallery above; not used in this particular template example</div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ DECISIONS TO CONFIRM ══════════════════════════ -->
+  <section id="decisions-section">
+    <div class="decisions-panel">
+      <h3>Decisions baked into this mock &mdash; please confirm or redirect</h3>
+      <p class="sub">None of these are in the plan verbatim; they're the calls made to turn "4 shapes + lean chrome" into actual pixels.</p>
+      <ol class="decisions-list">
+        <li><span class="dnum">1</span><div><b>Exact dimensions:</b> Terminator 170&times;56, Process 200&times;72, Decision 190&times;130, Input/Output 200&times;76. Decision is deliberately wider than tall (standard flowchart proportion) rather than square.</div></li>
+        <li><span class="dnum">2</span><div><b>Default fill colors</b> reuse 4 existing swatches already in <code>SWATCHES</code> (green/blue/amber/purple) rather than introducing new brand colors or defaulting all 4 to white/neutral like draw.io. Still recolorable via the existing color picker.</div></li>
+        <li><span class="dnum">3</span><div><b>Process keeps the app's 14px corner rounding</b> (same as every sticky tile) instead of switching to sharp draw.io-style rectangle corners &mdash; prioritizing visual continuity with the rest of the board over flowchart-notation purism.</div></li>
+        <li><span class="dnum">4</span><div><b>Long-label handling:</b> Decision truncates at 2 lines + ellipsis inside a centered ~62%-width safe zone (clear of the sloped edges); Process/Input-Output clamp at 3/2 lines + ellipsis. Text never auto-shrinks font size and never overflows outside the shape's silhouette the way draw.io lets it.</div></li>
+        <li><span class="dnum">5</span><div><b>Decision/Input-Output selection ring</b> is implemented as a second clip-path layer behind the fill (since native <code>outline</code> can't follow a clip-path silhouette), rather than switching those two shapes to a different selection indicator (e.g. a glow, a corner-only marker) than the rest of the board uses.</div></li>
+        <li><span class="dnum">6</span><div><b>Connector dots/resize handle reuse the existing 4-bounding-box-side positions unchanged</b> for all 4 shapes &mdash; for Decision this happens to land exactly on its 4 vertices; for Input/Output the left/right dots sit near, not exactly on, the slanted edge (same approximation the app already accepts for circular tiles).</div></li>
+        <li><span class="dnum">7</span><div><b>Template example</b> uses two separate "End" terminators (one per Yes/No branch) rather than merging both branches back into a single End node, to keep the connector routing simple and avoid a backward-pointing arrow. Input/Output isn't used in the template itself, only in the standalone shape gallery, since the plan's template description doesn't call for it.</div></li>
+      </ol>
+    </div>
+  </section>
+
+  <footer class="foot">Flowchart shapes &middot; mock v1 &middot; generated for review, not implementation</footer>
+</div>
+
+<script>
+  function toggleSelect(el, evt){
+    if (evt) evt.stopPropagation();
+    var already = el.classList.contains('selected');
+    var scope = el.closest('.flow-canvas') || document;
+    scope.querySelectorAll('.tile-base.selected, .clip-wrap.selected').forEach(function(n){ n.classList.remove('selected'); });
+    if (!already) el.classList.add('selected');
+  }
+  function clearAllSelected(){
+    document.querySelectorAll('#flow-canvas .tile-base.selected, #flow-canvas .clip-wrap.selected').forEach(function(n){ n.classList.remove('selected'); });
+  }
+  function toggleTemplates(){
+    var f = document.getElementById('tpl-flyout');
+    f.style.display = (f.style.display === 'none') ? 'block' : 'none';
+  }
+</script>
