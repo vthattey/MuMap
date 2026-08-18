@@ -7,6 +7,12 @@ import { renderRichText } from "../../lib/richText.jsx";
 // kind, e.g. a table widget, follows the same pattern) without touching
 // TileNode's drag/select/resize/connector-dot chrome around it.
 export default function TileContentView({ tile }) {
+  if (tile.kind === "text") {
+    return tile.content
+      ? <div style={styles.textBody}>{renderRichText(tile.content)}</div>
+      : <div style={styles.textBodyPlaceholder}>Type something…</div>;
+  }
+
   if (tile.kind === "image") {
     return (
       <div style={styles.imageBody}>

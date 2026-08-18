@@ -40,6 +40,42 @@ export default function TileNode({
 }) {
   const isCircle = t.shape === "circle";
 
+  // A free text block skips all card chrome (badges, status pill, tags,
+  // vote widget, background/border) — just the text plus the same
+  // resize/connect affordances every other tile gets.
+  if (t.kind === "text") {
+    return (
+      <div key={t.id} className="tile text-tile"
+        style={{
+          ...styles.textTile,
+          left: t.x, top: t.y, width: t.w, minHeight: t.h,
+          outline: isConnectTarget ? `3px solid ${ACCENT}` : isSelected ? `2px solid ${ACCENT}` : "1px dashed transparent",
+          outlineOffset: isSelected && !isConnectTarget ? 2 : 0,
+          cursor: "grab",
+          zIndex: isSelected || isConnectSource ? 5 : 1,
+        }}
+        onPointerDown={onPointerDown}
+        onPointerEnter={onHoverEnter}
+        onPointerLeave={onHoverLeave}
+        onClick={onClick}
+        onDoubleClick={onDoubleClick}
+      >
+        {isEditing ? (
+          <TileContentEditor tile={t} isCircle={false} dispatch={dispatch} onDone={onEditingDone} />
+        ) : (
+          <TileContentView tile={t} />
+        )}
+        <div className="resize-handle" style={styles.resizeHandle} onPointerDown={onResizeStart} />
+        {showDots && SIDES.map((side) => (
+          <div key={side} className="connector-dot"
+            style={{ ...styles.connectorDot, ...dotPositionStyle(side) }}
+            onPointerDown={(e) => onDotPointerDown(e, side)}
+          />
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div key={t.id} className="tile"
       style={{

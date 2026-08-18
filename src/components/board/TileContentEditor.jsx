@@ -40,6 +40,40 @@ export default function TileContentEditor({ tile, isCircle, dispatch, onDone }) 
   const patch = (p, opts) => dispatch({ type: "UPDATE_TILE", id: tile.id, patch: p, ...opts });
   const setContentSilent = (content) => patch({ content }, { _silent: true });
 
+  if (tile.kind === "text") {
+    return (
+      <div
+        style={{ width: "100%" }}
+        onPointerDown={(e) => e.stopPropagation()}
+        onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onDone(); }}
+      >
+        <div style={styles.richTextToolbar}>
+          {[
+            { Icon: Bold, title: "Bold", action: () => wrapSelection(textareaRef.current, "**", "**", setContentSilent) },
+            { Icon: Italic, title: "Italic", action: () => wrapSelection(textareaRef.current, "*", "*", setContentSilent) },
+            { Icon: List, title: "Bullet", action: () => toggleBulletLine(textareaRef.current, setContentSilent) },
+          ].map(({ Icon, title, action }) => (
+            <button key={title} type="button" title={title} style={styles.richTextBtn}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={action}>
+              <Icon size={11} />
+            </button>
+          ))}
+        </div>
+        <textarea
+          ref={textareaRef}
+          autoFocus
+          style={styles.textBodyInput}
+          value={tile.content}
+          placeholder="Type something…"
+          onChange={(e) => patch({ content: e.target.value }, { _silent: true })}
+          onBlur={() => patch({ content: tile.content })}
+          onKeyDown={(e) => { if (e.key === "Escape") e.currentTarget.blur(); }}
+        />
+      </div>
+    );
+  }
+
   if (tile.kind === "image") {
     return (
       <div

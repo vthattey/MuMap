@@ -101,6 +101,28 @@ export function makeImageTile(x, y, url, overrides = {}) {
   };
 }
 
+// A free text block — Mural's "Text" tool. No card background/border, just
+// editable text sitting directly on the canvas; reuses `content` for the
+// text itself the same way image tiles reuse it for a URL.
+export function makeTextTile(x, y, overrides = {}) {
+  return {
+    id: uid(),
+    kind: "text",
+    type: "user-story",
+    shape: "rectangle",
+    title: "",
+    content: "",
+    color: "transparent",
+    x, y,
+    w: 220,
+    h: 50,
+    tags: [],
+    status: "none",
+    points: null,
+    ...overrides,
+  };
+}
+
 export function makeLink(fromId, toId, overrides = {}) {
   return {
     id: uid(),

@@ -2,15 +2,16 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Download, Upload, X, Trash2, ArrowLeft, Share2, Eye,
-  ZoomIn, ZoomOut, Maximize, Undo2, Redo2, Copy, Move,
+  ZoomIn, ZoomOut, Maximize, Undo2, Redo2, Copy,
   Square, Circle, RectangleHorizontal, Frame as FrameIcon,
   Send, Vote as VoteIcon, MessageSquare, Image as ImageIcon, PenLine,
+  MousePointer2, Hand, Type as TypeIcon, LayoutTemplate,
 } from "lucide-react";
 import { useBoardSync } from "./hooks/useBoardSync.js";
 import { useMapPermission } from "./hooks/useMapPermission.js";
 import { useAuth } from "./auth/AuthContext.jsx";
 import { canComment, canEdit } from "./lib/permissions.js";
-import { TILE_TYPES, SHAPES, SWATCHES, STATUSES, makeTile, makeFrame, makeImageTile, makeLink } from "./lib/boardModel.js";
+import { TILE_TYPES, SHAPES, SWATCHES, STATUSES, makeTile, makeFrame, makeImageTile, makeTextTile, makeLink } from "./lib/boardModel.js";
 import { TEMPLATES, materializeTemplate } from "./lib/templates.js";
 import { uploadTileImage } from "./lib/imageUpload.js";
 import ShareMapPanel from "./components/ShareMapPanel.jsx";
@@ -165,6 +166,7 @@ export default function MuMap({ mapId }) {
   const [voteStartOpen, setVoteStartOpen] = useState(false);
   const [voteBudgetDraft, setVoteBudgetDraft] = useState(3);
   const [drawColor, setDrawColor] = useState(DRAW_COLORS[0]);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [liveStroke, setLiveStroke] = useState(null); // {points, color, width} board coords — in-progress stroke
 
   // ---- Refs ----
@@ -287,6 +289,33 @@ export default function MuMap({ mapId }) {
     setEditingId(f.id);
     setSelection(new Set([f.id]));
   }, [dispatch, pan, zoom, readOnly]);
+
+  const addTextInView = useCallback(() => {
+    if (readOnly) return;
+    const el = boardRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const cx = (r.width / 2 - pan.x) / zoom - 110 + (Math.random() - 0.5) * 60;
+    const cy = (r.height / 2 - pan.y) / zoom - 25 + (Math.random() - 0.5) * 60;
+    const t = makeTextTile(cx, cy);
+    dispatch({ type: "ADD_TILE", tile: t });
+    setEditingId(t.id);
+    setSelection(new Set([t.id]));
+  }, [dispatch, pan, zoom, readOnly]);
+
+  const insertTemplateInView = useCallback((template) => {
+    if (readOnly) return;
+    const el = boardRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const originX = (r.width / 2 - pan.x) / zoom - 480;
+    const originY = (r.height / 2 - pan.y) / zoom - 210;
+    const { tiles: newTiles, links: newLinks } = materializeTemplate(template, originX, originY);
+    dispatch({ type: "ADD_TILES", tiles: newTiles });
+    newLinks.forEach((l) => dispatch({ type: "ADD_LINK", link: l }));
+    setSelection(new Set(newTiles.map((t) => t.id)));
+    showToast(`Added "${template.name}" template`);
+  }, [dispatch, pan, zoom, readOnly, showToast]);
 
   const addImageAt = useCallback(async (file) => {
     if (readOnly || !file || !user) return;
@@ -685,7 +714,7 @@ export default function MuMap({ mapId }) {
       else if (e.key === "Escape") {
         setSelection(new Set()); setMode("select");
         connectingRef.current = null; setConnecting(null); setConnectTarget(null);
-        setQuickCreate(null);
+        setQuickCreate(null); setTemplatesOpen(false);
         drawingRef.current = null; setLiveStroke(null);
       }
       else if (e.key === "=" || e.key === "+") { if (ctrl) { e.preventDefault(); zoomIn(); } }
@@ -792,7 +821,9 @@ export default function MuMap({ mapId }) {
         .lasso-rect { fill: rgba(79,70,229,0.08); stroke: ${ACCENT}; stroke-width: 1.5; stroke-dasharray: 6 3; }
         .connector-dot:hover { transform: translate(-50%,-50%) scale(1.15) !important; }
         .toolbtn:hover { background: #e5e7eb !important; }
-        .shape-btn:hover { background: ${SUBTLE_BG}; }
+        .toolicon-btn:hover { background: ${SUBTLE_BG}; }
+        .template-flyout-item:hover { background: ${SUBTLE_BG}; }
+        .text-tile:hover { outline-color: rgba(31,41,55,0.25) !important; }
       `}</style>
 
       {/* ════════ HEADER ════════ */}
@@ -851,13 +882,6 @@ export default function MuMap({ mapId }) {
             <button className="toolbtn" style={styles.btn} onClick={() => setShareOpen(true)}><Share2 size={14} /> Share</button>
           )}
 
-          <button className="toolbtn" style={{ ...styles.btn, background: mode === "pan" ? ACCENT_SOFT : SUBTLE_BG }}
-            onClick={() => setMode((m) => m === "pan" ? "select" : "pan")}>
-            <Move size={14} /> Pan
-          </button>
-
-          <div style={styles.separator} />
-
           {!readOnly && (
             <>
               {/* Undo / Redo */}
@@ -899,51 +923,86 @@ export default function MuMap({ mapId }) {
 
       {/* ════════ MAIN ROW: side panel + board ════════ */}
       <div style={styles.mainRow}>
-        {/* ════════ SIDE PANEL — Mural-style shape picker ════════ */}
-        {!readOnly && (
-          <div style={styles.sidebar}>
-            <div style={styles.sidebarLabel}>Add tile</div>
-            {Object.entries(SHAPES).map(([key, s]) => {
-              const Icon = SHAPE_ICONS[key];
-              return (
-                <button key={key} className="shape-btn" style={styles.shapeBtn} onClick={() => addShapeInView(key)} title={`Add ${s.label}`}>
-                  <span style={styles.shapePreview}><Icon size={26} strokeWidth={1.75} color={INK_SOFT} /></span>
-                  <span>{s.label}</span>
-                </button>
-              );
-            })}
-
-            <div style={{ ...styles.sidebarLabel, marginTop: 6 }}>Organize</div>
-            <button className="shape-btn" style={styles.shapeBtn} onClick={addFrameInView} title="Add a frame">
-              <span style={styles.shapePreview}><FrameIcon size={24} strokeWidth={1.75} color={INK_SOFT} /></span>
-              <span>Frame</span>
+        {/* ════════ SIDE PANEL — Mural-style icon rail: mode toggle on top, tools below ════════ */}
+        <div style={styles.sidebar}>
+          <div style={styles.sidebarModeRow}>
+            <button className="toolicon-btn" style={{ ...styles.toolIconBtn, ...(mode === "select" ? styles.toolIconBtnActive : null) }}
+              onClick={() => setMode("select")} title="Select">
+              <MousePointer2 size={18} strokeWidth={1.75} color={mode === "select" ? ACCENT : INK_SOFT} />
             </button>
-
-            <div style={{ ...styles.sidebarLabel, marginTop: 6 }}>Media</div>
-            <button className="shape-btn" style={styles.shapeBtn} onClick={() => imageInputRef.current?.click()} title="Add an image or GIF">
-              <span style={styles.shapePreview}><ImageIcon size={24} strokeWidth={1.75} color={INK_SOFT} /></span>
-              <span>Image</span>
+            <button className="toolicon-btn" style={{ ...styles.toolIconBtn, ...(mode === "pan" ? styles.toolIconBtnActive : null) }}
+              onClick={() => setMode("pan")} title="Pan (Space)">
+              <Hand size={18} strokeWidth={1.75} color={mode === "pan" ? ACCENT : INK_SOFT} />
             </button>
-            <input ref={imageInputRef} type="file" accept="image/*" style={{ display: "none" }}
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageAt(f); e.target.value = ""; }} />
-
-            <div style={{ ...styles.sidebarLabel, marginTop: 6 }}>Draw</div>
-            <button className="shape-btn" style={{ ...styles.shapeBtn, ...(mode === "draw" ? styles.shapeBtnActive : null) }}
-              onClick={() => setMode((m) => m === "draw" ? "select" : "draw")} title="Freehand pen">
-              <span style={styles.shapePreview}><PenLine size={22} strokeWidth={1.75} color={mode === "draw" ? ACCENT : INK_SOFT} /></span>
-              <span>Pen</span>
-            </button>
-            {mode === "draw" && (
-              <div style={styles.drawColorRow}>
-                {DRAW_COLORS.map((c) => (
-                  <button key={c} onClick={() => setDrawColor(c)}
-                    style={{ ...styles.drawColorSwatch, background: c, outline: drawColor === c ? `2px solid ${ACCENT}` : `1px solid ${BORDER}` }}
-                    title={c} />
-                ))}
-              </div>
-            )}
           </div>
-        )}
+
+          {!readOnly && (
+            <>
+              <div style={styles.sidebarDivider} />
+
+              {Object.entries(SHAPES).map(([key, s]) => {
+                const Icon = SHAPE_ICONS[key];
+                return (
+                  <button key={key} className="toolicon-btn" style={styles.toolIconBtn} onClick={() => addShapeInView(key)} title={`Add ${s.label}`}>
+                    <Icon size={18} strokeWidth={1.75} color={INK_SOFT} />
+                  </button>
+                );
+              })}
+
+              <button className="toolicon-btn" style={styles.toolIconBtn} onClick={addTextInView} title="Add text">
+                <TypeIcon size={18} strokeWidth={1.75} color={INK_SOFT} />
+              </button>
+
+              <button className="toolicon-btn" style={styles.toolIconBtn} onClick={addFrameInView} title="Add a frame">
+                <FrameIcon size={18} strokeWidth={1.75} color={INK_SOFT} />
+              </button>
+
+              <button className="toolicon-btn" style={styles.toolIconBtn} onClick={() => imageInputRef.current?.click()} title="Add an image or GIF">
+                <ImageIcon size={18} strokeWidth={1.75} color={INK_SOFT} />
+              </button>
+              <input ref={imageInputRef} type="file" accept="image/*" style={{ display: "none" }}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageAt(f); e.target.value = ""; }} />
+
+              <div style={styles.sidebarDivider} />
+
+              <div style={{ position: "relative" }}>
+                <button className="toolicon-btn" style={{ ...styles.toolIconBtn, ...(mode === "draw" ? styles.toolIconBtnActive : null) }}
+                  onClick={() => setMode((m) => m === "draw" ? "select" : "draw")} title="Freehand pen">
+                  <PenLine size={18} strokeWidth={1.75} color={mode === "draw" ? ACCENT : INK_SOFT} />
+                </button>
+                {mode === "draw" && (
+                  <div style={styles.sidebarFlyout} onPointerDown={(e) => e.stopPropagation()}>
+                    <div style={styles.drawColorRow}>
+                      {DRAW_COLORS.map((c) => (
+                        <button key={c} onClick={() => setDrawColor(c)}
+                          style={{ ...styles.drawColorSwatch, background: c, outline: drawColor === c ? `2px solid ${ACCENT}` : `1px solid ${BORDER}` }}
+                          title={c} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ position: "relative" }}>
+                <button className="toolicon-btn" style={{ ...styles.toolIconBtn, ...(templatesOpen ? styles.toolIconBtnActive : null) }}
+                  onClick={() => setTemplatesOpen((o) => !o)} title="Insert a template">
+                  <LayoutTemplate size={18} strokeWidth={1.75} color={templatesOpen ? ACCENT : INK_SOFT} />
+                </button>
+                {templatesOpen && (
+                  <div style={{ ...styles.sidebarFlyout, ...styles.templatesFlyout }} onPointerDown={(e) => e.stopPropagation()}>
+                    {TEMPLATES.map((tpl) => (
+                      <button key={tpl.id} className="template-flyout-item" style={styles.templateFlyoutItem}
+                        onClick={() => { insertTemplateInView(tpl); setTemplatesOpen(false); }}>
+                        <span style={styles.templateFlyoutName}>{tpl.name}</span>
+                        <span style={styles.templateFlyoutDesc}>{tpl.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
 
         {/* ════════ BOARD AREA (zoom + pan layer) ════════ */}
         <div style={styles.boardArea}>
@@ -1225,35 +1284,39 @@ export default function MuMap({ mapId }) {
             return (
               <div style={{ ...styles.miniToolbar, left, top: top - 86, flexDirection: "column", alignItems: "stretch" }} onPointerDown={(e) => e.stopPropagation()}>
                 <div style={styles.miniToolbarRow}>
-                  <select value={singleSelectedTile.type} onChange={(e) => {
-                    const type = e.target.value;
-                    patchTile({ type, color: TILE_TYPES[type].color });
-                  }} style={styles.miniSelect} title="Type">
-                    {Object.entries(TILE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                  </select>
+                  {singleSelectedTile.kind === "tile" && (
+                    <>
+                      <select value={singleSelectedTile.type} onChange={(e) => {
+                        const type = e.target.value;
+                        patchTile({ type, color: TILE_TYPES[type].color });
+                      }} style={styles.miniSelect} title="Type">
+                        {Object.entries(TILE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                      </select>
 
-                  <div style={styles.miniSep} />
+                      <div style={styles.miniSep} />
 
-                  {SWATCHES.map((c) => (
-                    <button key={c} onClick={() => patchTile({ color: c })}
-                      style={{ ...styles.miniSwatch, background: c, outline: singleSelectedTile.color === c ? `2px solid ${ACCENT}` : `1px solid ${BORDER}` }} />
-                  ))}
+                      {SWATCHES.map((c) => (
+                        <button key={c} onClick={() => patchTile({ color: c })}
+                          style={{ ...styles.miniSwatch, background: c, outline: singleSelectedTile.color === c ? `2px solid ${ACCENT}` : `1px solid ${BORDER}` }} />
+                      ))}
 
-                  <div style={styles.miniSep} />
+                      <div style={styles.miniSep} />
 
-                  {Object.entries(SHAPES).map(([key, s]) => {
-                    const Icon = SHAPE_ICONS[key];
-                    const isActive = (singleSelectedTile.shape || "rectangle") === key;
-                    return (
-                      <button key={key} onClick={() => patchTile({ shape: key })}
-                        style={{ ...styles.miniShapeBtn, outline: isActive ? `2px solid ${ACCENT}` : `1px solid ${BORDER}` }}
-                        title={s.label}>
-                        <Icon size={13} strokeWidth={1.75} color={INK_SOFT} />
-                      </button>
-                    );
-                  })}
+                      {Object.entries(SHAPES).map(([key, s]) => {
+                        const Icon = SHAPE_ICONS[key];
+                        const isActive = (singleSelectedTile.shape || "rectangle") === key;
+                        return (
+                          <button key={key} onClick={() => patchTile({ shape: key })}
+                            style={{ ...styles.miniShapeBtn, outline: isActive ? `2px solid ${ACCENT}` : `1px solid ${BORDER}` }}
+                            title={s.label}>
+                            <Icon size={13} strokeWidth={1.75} color={INK_SOFT} />
+                          </button>
+                        );
+                      })}
 
-                  <div style={styles.miniSep} />
+                      <div style={styles.miniSep} />
+                    </>
+                  )}
 
                   <button style={styles.miniDeleteBtn} title="Delete" onClick={() => {
                     dispatch({ type: "DELETE_TILES", ids: [singleSelectedTile.id] });
@@ -1462,14 +1525,21 @@ const styles = {
   // Layout
   mainRow: { display: "flex", flex: 1, minHeight: 0, overflow: "hidden" },
 
-  // Sidebar (Mural-style shape panel)
-  sidebar: { width: 92, flexShrink: 0, background: PANEL_BG, borderRight: `1px solid ${BORDER}`, display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "16px 6px", overflowY: "auto" },
-  sidebarLabel: { fontSize: 10, fontWeight: 700, letterSpacing: 0.5, color: INK_FAINT, textTransform: "uppercase", marginBottom: 4 },
-  shapeBtn: { width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, border: "none", background: "transparent", cursor: "pointer", padding: "8px 4px", borderRadius: 10, color: INK_SOFT, fontSize: 10.5, fontWeight: 600 },
-  shapeBtnActive: { color: ACCENT, background: ACCENT_SOFT },
-  shapePreview: { width: 44, height: 44, borderRadius: 10, background: SUBTLE_BG, display: "flex", alignItems: "center", justifyContent: "center" },
-  drawColorRow: { display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", padding: "2px 4px 4px" },
+  // Sidebar — Mural-style icon rail: fixed width, icon-only buttons, no
+  // scrollbar. Two portions: a mode row (select/pan, always visible even
+  // for read-only viewers) and a tools column (hidden when !canEdit).
+  sidebar: { width: 52, flexShrink: 0, background: PANEL_BG, borderRight: `1px solid ${BORDER}`, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "10px 8px" },
+  sidebarModeRow: { display: "flex", flexDirection: "column", gap: 4 },
+  sidebarDivider: { width: 28, height: 1, background: BORDER, margin: "4px 0" },
+  toolIconBtn: { width: 36, height: 36, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "transparent", borderRadius: 8, cursor: "pointer" },
+  toolIconBtnActive: { background: ACCENT_SOFT },
+  sidebarFlyout: { position: "absolute", left: "100%", top: 0, marginLeft: 8, background: "#ffffff", border: `1px solid ${BORDER}`, borderRadius: 10, padding: 8, boxShadow: "0 8px 20px rgba(31,41,55,0.15)", zIndex: 25 },
+  drawColorRow: { display: "flex", flexWrap: "wrap", gap: 6, width: 68 },
   drawColorSwatch: { width: 18, height: 18, borderRadius: "50%", border: "none", cursor: "pointer" },
+  templatesFlyout: { display: "flex", flexDirection: "column", gap: 2, width: 210, padding: 6 },
+  templateFlyoutItem: { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, textAlign: "left", border: "none", background: "transparent", borderRadius: 8, padding: "8px 8px", cursor: "pointer" },
+  templateFlyoutName: { fontSize: 12.5, fontWeight: 700, color: INK },
+  templateFlyoutDesc: { fontSize: 11, color: INK_FAINT, lineHeight: 1.35 },
 
   // Board area
   boardArea: { position: "relative", flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" },

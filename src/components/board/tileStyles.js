@@ -27,6 +27,10 @@ export const tileStyles = {
   voteCount: { display: "flex", alignItems: "center", gap: 3, minWidth: 12, textAlign: "center", color: "#fff", fontSize: 10.5, fontWeight: 700 },
   imageBody: { display: "flex", flexDirection: "column", width: "100%" },
   imageBodyImg: { width: "100%", maxHeight: 220, objectFit: "cover", borderRadius: 8, display: "block" },
+  textTile: { position: "absolute", padding: "6px 8px", boxSizing: "border-box", fontFamily: FONT, userSelect: "none", touchAction: "none" },
+  textBody: { fontSize: 14, color: INK, lineHeight: 1.4, whiteSpace: "pre-wrap", wordBreak: "break-word" },
+  textBodyPlaceholder: { fontSize: 14, color: "rgba(31,41,55,0.35)", lineHeight: 1.4 },
+  textBodyInput: { display: "block", width: "100%", fontFamily: FONT, fontSize: 14, color: INK, lineHeight: 1.4, border: "none", background: "transparent", padding: 0, outline: "none", resize: "none", minHeight: 36 },
   richTextToolbar: { display: "flex", gap: 2, marginTop: 4 },
   richTextBtn: { width: 20, height: 18, display: "flex", alignItems: "center", justifyContent: "center", border: "none", borderRadius: 4, background: "rgba(31,41,55,0.08)", color: INK_SOFT, cursor: "pointer", padding: 0 },
 };
