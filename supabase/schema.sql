@@ -80,7 +80,7 @@ create table if not exists map_shares (
   id uuid primary key default gen_random_uuid(),
   map_id uuid not null references maps (id) on delete cascade,
   user_id uuid not null references profiles (id) on delete cascade,
-  permission text not null check (permission in ('view', 'edit')),
+  permission text not null check (permission in ('view', 'comment', 'edit')),
   created_at timestamptz not null default now(),
   unique (map_id, user_id)
 );
@@ -104,9 +104,22 @@ create policy "only the map owner manages shares"
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- has_map_access — single source of truth for the RLS policies below.
+-- `need` and a share's `permission` are both one of 'view'|'comment'|'edit',
+-- compared as levels (0/1/2) so a share only needs to meet or exceed what's
+-- required — this is the same tiering as PERMISSION_LEVELS in
+-- src/lib/permissions.js, just re-expressed in SQL since RLS can't call
+-- into client code.
 -- A map with created_by = NULL is grandfathered as globally accessible;
 -- this can only happen on rows migrated from before ownership existed.
 -- ═══════════════════════════════════════════════════════════════════════
+create or replace function permission_level(p text)
+returns integer
+language sql
+immutable
+as $$
+  select case p when 'edit' then 2 when 'comment' then 1 else 0 end;
+$$;
+
 create or replace function has_map_access(target_map_id uuid, need text default 'view')
 returns boolean
 language sql
@@ -122,7 +135,7 @@ as $$
     select 1 from map_shares s
     where s.map_id = target_map_id
       and s.user_id = auth.uid()
-      and (need = 'view' or s.permission = 'edit')
+      and permission_level(s.permission) >= permission_level(need)
   );
 $$;
 
@@ -236,6 +249,37 @@ create policy "links are deletable with edit access"
   using (has_map_access(map_id, 'edit'));
 
 -- ═══════════════════════════════════════════════════════════════════════
+-- STROKES — freehand drawing. A stroke is written once, in full, when the
+-- pointer is released — not per-point — so drawing doesn't flood the
+-- realtime channel with an insert per pixel.
+-- ═══════════════════════════════════════════════════════════════════════
+create table if not exists strokes (
+  id uuid primary key default gen_random_uuid(),
+  map_id uuid not null references maps (id) on delete cascade,
+  author_id uuid not null references profiles (id) on delete cascade,
+  color text not null default '#1f2937',
+  width double precision not null default 2.5,
+  points jsonb not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists strokes_map_id_idx on strokes (map_id);
+
+alter table strokes enable row level security;
+
+create policy "strokes are selectable with view access"
+  on strokes for select
+  using (has_map_access(map_id, 'view'));
+
+create policy "strokes are insertable with comment access"
+  on strokes for insert
+  with check (has_map_access(map_id, 'comment') and author_id = auth.uid());
+
+create policy "strokes are deletable by their author"
+  on strokes for delete
+  using (author_id = auth.uid());
+
+-- ═══════════════════════════════════════════════════════════════════════
 -- COMMENTS — a flat (non-threaded) discussion feed per tile.
 -- ═══════════════════════════════════════════════════════════════════════
 create table if not exists comments (
@@ -256,9 +300,9 @@ create policy "comments are selectable with view access"
   on comments for select
   using (has_map_access(map_id, 'view'));
 
-create policy "comments are insertable with edit access"
+create policy "comments are insertable with comment access"
   on comments for insert
-  with check (has_map_access(map_id, 'edit') and author_id = auth.uid());
+  with check (has_map_access(map_id, 'comment') and author_id = auth.uid());
 
 create policy "comments are deletable by their author"
   on comments for delete
@@ -348,6 +392,7 @@ create policy "votes are insertable within the session budget"
   on votes for insert
   with check (
     user_id = auth.uid()
+    and has_map_access(map_id, 'comment')
     and votes_used_in_session(session_id) < (
       select votes_per_person from vote_sessions s
       where s.id = votes.session_id and s.active
@@ -359,12 +404,54 @@ create policy "votes are deletable by their voter"
   using (user_id = auth.uid());
 
 -- ═══════════════════════════════════════════════════════════════════════
+-- IMAGE TILES — a public-read storage bucket for uploaded tile images/GIFs.
+-- Uploads write under a per-user folder (enforced by the insert policy
+-- below) so one user can't overwrite another's files; there's no per-map
+-- scoping since an image can outlive being removed from one board and
+-- storage cleanup on tile delete is intentionally out of scope for v1.
+-- ═══════════════════════════════════════════════════════════════════════
+insert into storage.buckets (id, name, public)
+values ('tile-images', 'tile-images', true)
+on conflict (id) do nothing;
+
+create policy "tile images are publicly readable"
+  on storage.objects for select
+  using (bucket_id = 'tile-images');
+
+create policy "authenticated users can upload tile images"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'tile-images' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "users can delete their own uploaded tile images"
+  on storage.objects for delete
+  to authenticated
+  using (bucket_id = 'tile-images' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ═══════════════════════════════════════════════════════════════════════
 -- REALTIME — stream row changes for live sync (Presence/Broadcast need no
 -- publication setup, only Postgres Changes does).
+--
+-- Every postgres_changes listener below filters on a non-primary-key
+-- column (map_id, user_id) so it can scope events to one map/user. With
+-- Postgres's default REPLICA IDENTITY, a DELETE's "old" record only
+-- carries the primary key — the filter column is missing, the filter
+-- can't be evaluated, and the event is silently dropped for everyone.
+-- REPLICA IDENTITY FULL puts the whole old row on every UPDATE/DELETE so
+-- those filters actually work.
 -- ═══════════════════════════════════════════════════════════════════════
+alter table tiles replica identity full;
+alter table links replica identity full;
+alter table map_shares replica identity full;
+alter table comments replica identity full;
+alter table vote_sessions replica identity full;
+alter table votes replica identity full;
+alter table strokes replica identity full;
+
 alter publication supabase_realtime add table tiles;
 alter publication supabase_realtime add table links;
 alter publication supabase_realtime add table map_shares;
 alter publication supabase_realtime add table comments;
 alter publication supabase_realtime add table vote_sessions;
 alter publication supabase_realtime add table votes;
+alter publication supabase_realtime add table strokes;

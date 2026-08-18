@@ -54,6 +54,7 @@ export default function ShareMapPanel({ mapId, onClose }) {
             onChange={(e) => setEmail(e.target.value)} />
           <select style={styles.select} value={permission} onChange={(e) => setPermission(e.target.value)}>
             <option value="view">Can view</option>
+            <option value="comment">Can comment</option>
             <option value="edit">Can edit</option>
           </select>
           <button style={styles.inviteBtn} type="submit" disabled={busy}><UserPlus size={14} /> Invite</button>
@@ -71,6 +72,7 @@ export default function ShareMapPanel({ mapId, onClose }) {
             <div style={styles.shareName}>{s.profiles?.display_name || "Unknown user"}</div>
             <select style={styles.rowSelect} value={s.permission} onChange={(e) => onChangePermission(s.id, e.target.value)}>
               <option value="view">Can view</option>
+              <option value="comment">Can comment</option>
               <option value="edit">Can edit</option>
             </select>
             <button style={styles.removeBtn} title="Remove access" onClick={() => onRemove(s.id)}><Trash2 size={13} /></button>

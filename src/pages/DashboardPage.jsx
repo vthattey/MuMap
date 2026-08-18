@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, LogOut, Map as MapIcon, Trash2 } from "lucide-react";
+import { Plus, LogOut, Map as MapIcon, Trash2, LayoutTemplate } from "lucide-react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { FONT, INK, INK_SOFT, INK_FAINT, BORDER, ACCENT, SUBTLE_BG, DANGER } from "../lib/theme.js";
+import { TEMPLATES } from "../lib/templates.js";
 
 export default function DashboardPage() {
   const { user, profile, signOut } = useAuth();
@@ -11,6 +12,7 @@ export default function DashboardPage() {
   const [maps, setMaps] = useState(null); // null = loading
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  const [templateId, setTemplateId] = useState(null); // null = blank map
 
   const loadMaps = useCallback(async () => {
     // RLS already restricts this to maps the caller owns or has been
@@ -38,8 +40,10 @@ export default function DashboardPage() {
   const createMap = useCallback(async (e) => {
     e.preventDefault();
     const name = newName.trim() || "Untitled map";
+    const chosenTemplate = templateId;
     setCreating(false);
     setNewName("");
+    setTemplateId(null);
     // Insert with a client-generated id and no RETURNING, then fetch the
     // row back as a separate query — asking Postgres to RETURN the row
     // from the INSERT itself re-checks the SELECT policy (has_map_access)
@@ -48,8 +52,11 @@ export default function DashboardPage() {
     const id = crypto.randomUUID();
     const { error: insertError } = await supabase.from("maps").insert({ id, name });
     if (insertError) { console.error("[createMap] insert failed:", insertError); return; }
-    navigate(`/map/${id}`);
-  }, [newName, navigate]);
+    // A plain URL param, not shared state — MuMap.jsx materializes the
+    // template itself once the (empty) new map has loaded, so Dashboard and
+    // the map view stay decoupled.
+    navigate(chosenTemplate ? `/map/${id}?template=${chosenTemplate}` : `/map/${id}`);
+  }, [newName, templateId, navigate]);
 
   const deleteMap = useCallback(async (e, id) => {
     e.stopPropagation();
@@ -76,12 +83,31 @@ export default function DashboardPage() {
         </div>
 
         {creating && (
-          <form style={styles.newForm} onSubmit={createMap}>
-            <input autoFocus style={styles.input} placeholder="Map name" value={newName}
-              onChange={(e) => setNewName(e.target.value)} />
-            <button style={styles.btnPrimary} type="submit">Create</button>
-            <button style={styles.btn} type="button" onClick={() => { setCreating(false); setNewName(""); }}>Cancel</button>
-          </form>
+          <div style={styles.newFormWrap}>
+            <form style={styles.newForm} onSubmit={createMap}>
+              <input autoFocus style={styles.input} placeholder="Map name" value={newName}
+                onChange={(e) => setNewName(e.target.value)} />
+              <button style={styles.btnPrimary} type="submit">Create</button>
+              <button style={styles.btn} type="button" onClick={() => { setCreating(false); setNewName(""); setTemplateId(null); }}>Cancel</button>
+            </form>
+
+            <div style={styles.templateLabel}>Start from</div>
+            <div style={styles.templateRow}>
+              <button type="button" style={{ ...styles.templateCard, ...(templateId === null ? styles.templateCardActive : null) }}
+                onClick={() => setTemplateId(null)}>
+                <MapIcon size={16} color={INK_SOFT} />
+                <span>Blank</span>
+              </button>
+              {TEMPLATES.map((t) => (
+                <button key={t.id} type="button"
+                  style={{ ...styles.templateCard, ...(templateId === t.id ? styles.templateCardActive : null) }}
+                  onClick={() => setTemplateId(t.id)} title={t.description}>
+                  <LayoutTemplate size={16} color={INK_SOFT} />
+                  <span>{t.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         )}
 
         {maps === null && <div style={styles.empty}>Loading…</div>}
@@ -124,7 +150,12 @@ const styles = {
   btnPrimary: { display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, border: "none", background: ACCENT, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" },
   btn: { padding: "8px 14px", borderRadius: 8, border: "none", background: SUBTLE_BG, color: INK, fontSize: 13, fontWeight: 600, cursor: "pointer" },
   input: { flex: 1, padding: "9px 11px", borderRadius: 8, border: `1px solid ${BORDER}`, fontSize: 14, color: INK, fontFamily: FONT },
-  newForm: { display: "flex", gap: 8, marginBottom: 20 },
+  newFormWrap: { marginBottom: 20 },
+  newForm: { display: "flex", gap: 8, marginBottom: 12 },
+  templateLabel: { fontSize: 11, fontWeight: 700, letterSpacing: 0.4, color: INK_FAINT, textTransform: "uppercase", marginBottom: 8 },
+  templateRow: { display: "flex", gap: 8, flexWrap: "wrap" },
+  templateCard: { display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 9, border: `1px solid ${BORDER}`, background: "#fff", color: INK, fontSize: 12.5, fontWeight: 600, cursor: "pointer" },
+  templateCardActive: { border: `1.5px solid ${ACCENT}`, background: "rgba(79,70,229,0.06)", color: ACCENT },
 
   empty: { color: INK_FAINT, fontSize: 14, padding: "30px 0", textAlign: "center" },
 

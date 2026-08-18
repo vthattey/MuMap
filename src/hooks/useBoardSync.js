@@ -25,6 +25,7 @@ export function useBoardSync(mapId) {
   const [authorProfiles, setAuthorProfiles] = useState({}); // userId -> {display_name, color}
   const [voteSession, setVoteSession] = useState(null);
   const [votes, setVotes] = useState([]);
+  const [strokes, setStrokes] = useState([]);
 
   const prevBoardRef = useRef(initialBoard);
   const syncMetaRef = useRef({ shouldSync: false });
@@ -54,12 +55,13 @@ export function useBoardSync(mapId) {
     let cancelled = false;
     setLoaded(false);
     (async () => {
-      const [{ data: tileRows }, { data: linkRows }, { data: commentRows }, { data: sessionRows }, { data: voteRows }] = await Promise.all([
+      const [{ data: tileRows }, { data: linkRows }, { data: commentRows }, { data: sessionRows }, { data: voteRows }, { data: strokeRows }] = await Promise.all([
         supabase.from("tiles").select("*").eq("map_id", mapId),
         supabase.from("links").select("*").eq("map_id", mapId),
         supabase.from("comments").select("*, author:profiles!author_id(display_name,color)").eq("map_id", mapId).order("created_at", { ascending: true }),
         supabase.from("vote_sessions").select("*").eq("map_id", mapId).order("created_at", { ascending: false }).limit(1),
         supabase.from("votes").select("*").eq("map_id", mapId),
+        supabase.from("strokes").select("*").eq("map_id", mapId),
       ]);
       if (cancelled) return;
       const tiles = (tileRows || []).map(rowToTile);
@@ -74,6 +76,7 @@ export function useBoardSync(mapId) {
       });
       setVoteSession((sessionRows && sessionRows[0]) || null);
       setVotes(voteRows || []);
+      setStrokes(strokeRows || []);
       setLoaded(true);
     })();
     return () => { cancelled = true; };
@@ -152,6 +155,16 @@ export function useBoardSync(mapId) {
           return;
         }
         setVotes((prev) => (prev.some((v) => v.id === row.id) ? prev.map((v) => (v.id === row.id ? row : v)) : [...prev, row]));
+      });
+
+    // ── Drawing ──
+    channel.on("postgres_changes", { event: "*", schema: "public", table: "strokes", filter: `map_id=eq.${mapId}` },
+      ({ eventType, new: row, old: oldRow }) => {
+        if (eventType === "DELETE") {
+          setStrokes((prev) => prev.filter((s) => s.id !== oldRow.id));
+          return;
+        }
+        setStrokes((prev) => (prev.some((s) => s.id === row.id) ? prev : [...prev, row]));
       });
 
     channel.on("broadcast", { event: "tiles" }, ({ payload }) => {
@@ -255,6 +268,20 @@ export function useBoardSync(mapId) {
     if (error) console.error("[useBoardSync] retract vote failed:", error);
   }, []);
 
+  // ── Drawing ───────────────────────────────────────────────────────────
+  // Written once per completed stroke (see the map-side capture logic),
+  // not per point, so drawing doesn't flood the realtime channel.
+  const addStroke = useCallback(async (points, color, width) => {
+    if (!mapId || !user || points.length < 2) return;
+    const { error } = await supabase.from("strokes").insert({ map_id: mapId, author_id: user.id, color, width, points });
+    if (error) console.error("[useBoardSync] add stroke failed:", error);
+  }, [mapId, user]);
+
+  const deleteStroke = useCallback(async (id) => {
+    const { error } = await supabase.from("strokes").delete().eq("id", id);
+    if (error) console.error("[useBoardSync] delete stroke failed:", error);
+  }, []);
+
   return {
     tiles: board.tiles,
     links: board.links,
@@ -276,5 +303,8 @@ export function useBoardSync(mapId) {
     endVoteSession,
     castVote,
     retractVote,
+    strokes,
+    addStroke,
+    deleteStroke,
   };
 }

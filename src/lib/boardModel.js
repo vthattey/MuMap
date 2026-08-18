@@ -79,6 +79,28 @@ export function makeFrame(x, y, overrides = {}) {
   };
 }
 
+// An image/GIF tile — reuses the existing `content` field to hold the
+// uploaded image's URL (no new column, same minimal-schema-churn approach
+// frames used for their title) and `title` as an optional caption.
+export function makeImageTile(x, y, url, overrides = {}) {
+  return {
+    id: uid(),
+    kind: "image",
+    type: "user-story",
+    shape: "rectangle",
+    title: "",
+    content: url,
+    color: "#f5d76e",
+    x, y,
+    w: 260,
+    h: 220,
+    tags: [],
+    status: "none",
+    points: null,
+    ...overrides,
+  };
+}
+
 export function makeLink(fromId, toId, overrides = {}) {
   return {
     id: uid(),
