@@ -7,8 +7,8 @@ import { useState, useCallback } from "react";
 export const TILE_TYPES = {
   "user-story": { label: "User Story", color: "#f5d76e", short: "US" },
   "tech-story": { label: "Technical Story", color: "#7ec8e3", short: "TS" },
-  question:     { label: "Assumption / Question", color: "#d8b4f0", short: "Q" },
-  estimate:     { label: "Estimate", color: "#93d9a8", short: "E" },
+  assumption:   { label: "Assumption", color: "#d8b4f0", short: "A" },
+  question:     { label: "Question", color: "#93d9a8", short: "Q" },
 };
 
 export const SHAPES = {
@@ -22,6 +22,14 @@ export const SWATCHES = [
   "#f2a3a3","#f3c98b","#a9c9f7","#e6e2d3",
 ];
 
+export const STATUSES = {
+  none:          { label: "No status", color: "#cbd5e1" },
+  todo:          { label: "To do",     color: "#94a3b8" },
+  "in-progress": { label: "In progress", color: "#3b82f6" },
+  blocked:       { label: "Blocked",   color: "#ef4444" },
+  done:          { label: "Done",      color: "#22c55e" },
+};
+
 const HISTORY_LIMIT = 60;
 
 export function uid() {
@@ -33,6 +41,7 @@ export function makeTile(type, shape, x, y, overrides = {}) {
   const dims = SHAPES[shape] || SHAPES.rectangle;
   return {
     id: uid(),
+    kind: "tile",
     type,
     shape: shape || "rectangle",
     title: t.label,
@@ -41,6 +50,28 @@ export function makeTile(type, shape, x, y, overrides = {}) {
     x, y,
     w: dims.w,
     h: dims.h,
+    tags: [],
+    status: "none",
+    points: null,
+    ...overrides,
+  };
+}
+
+// A frame is a labeled organizing region, not a story/task card — it reuses
+// the tile shape (and therefore every existing add/move/resize/delete/sync
+// code path) but is rendered and dragged differently in MuMap.jsx.
+export function makeFrame(x, y, overrides = {}) {
+  return {
+    id: uid(),
+    kind: "frame",
+    type: "frame",
+    shape: "rectangle",
+    title: "Frame",
+    content: "",
+    color: "#94a3b8",
+    x, y,
+    w: 480,
+    h: 360,
     tags: [],
     status: "none",
     points: null,
@@ -122,6 +153,12 @@ export function boardReducer(state, action) {
           : [...state.links, action.link],
       };
     }
+
+    case "UPDATE_LINK":
+      return {
+        ...state,
+        links: state.links.map((l) => (l.id === action.id ? { ...l, ...action.patch } : l)),
+      };
 
     case "DELETE_LINK":
       return { ...state, links: state.links.filter((l) => l.id !== action.id) };

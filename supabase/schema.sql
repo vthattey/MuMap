@@ -166,6 +166,7 @@ create policy "maps are deletable by their owner"
 create table if not exists tiles (
   id uuid primary key,
   map_id uuid not null references maps (id) on delete cascade,
+  kind text not null default 'tile',
   type text not null default 'user-story',
   shape text not null default 'rectangle',
   title text not null default '',
@@ -235,9 +236,122 @@ create policy "links are deletable with edit access"
   using (has_map_access(map_id, 'edit'));
 
 -- ═══════════════════════════════════════════════════════════════════════
+-- COMMENTS — a flat (non-threaded) discussion feed per tile.
+-- ═══════════════════════════════════════════════════════════════════════
+create table if not exists comments (
+  id uuid primary key default gen_random_uuid(),
+  map_id uuid not null references maps (id) on delete cascade,
+  tile_id uuid not null references tiles (id) on delete cascade,
+  author_id uuid not null references profiles (id) on delete cascade,
+  body text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists comments_map_id_idx on comments (map_id);
+create index if not exists comments_tile_id_idx on comments (tile_id);
+
+alter table comments enable row level security;
+
+create policy "comments are selectable with view access"
+  on comments for select
+  using (has_map_access(map_id, 'view'));
+
+create policy "comments are insertable with edit access"
+  on comments for insert
+  with check (has_map_access(map_id, 'edit') and author_id = auth.uid());
+
+create policy "comments are deletable by their author"
+  on comments for delete
+  using (author_id = auth.uid());
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- VOTE_SESSIONS / VOTES — full Mural-style dot-voting: an owner-started
+-- round with a fixed per-person budget, votes hidden from everyone but
+-- their own author until the owner ends the round and reveals results.
+-- ═══════════════════════════════════════════════════════════════════════
+create table if not exists vote_sessions (
+  id uuid primary key default gen_random_uuid(),
+  map_id uuid not null references maps (id) on delete cascade,
+  votes_per_person integer not null default 3,
+  active boolean not null default true,
+  revealed boolean not null default false,
+  created_by uuid not null references profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  ended_at timestamptz
+);
+
+create index if not exists vote_sessions_map_id_idx on vote_sessions (map_id);
+
+-- Only one active session per map at a time.
+create unique index if not exists vote_sessions_one_active
+  on vote_sessions (map_id) where active;
+
+alter table vote_sessions enable row level security;
+
+create policy "vote sessions are selectable with view access"
+  on vote_sessions for select
+  using (has_map_access(map_id, 'view'));
+
+create policy "only the map owner manages vote sessions"
+  on vote_sessions for all
+  using (exists (select 1 from maps m where m.id = map_id and m.created_by = auth.uid()))
+  with check (exists (select 1 from maps m where m.id = map_id and m.created_by = auth.uid()));
+
+create table if not exists votes (
+  id uuid primary key default gen_random_uuid(),
+  map_id uuid not null references maps (id) on delete cascade,
+  session_id uuid not null references vote_sessions (id) on delete cascade,
+  tile_id uuid not null references tiles (id) on delete cascade,
+  user_id uuid not null references profiles (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists votes_map_id_idx on votes (map_id);
+create index if not exists votes_session_id_idx on votes (session_id);
+create index if not exists votes_tile_id_idx on votes (tile_id);
+
+alter table votes enable row level security;
+
+-- Hidden-until-reveal: everyone always sees their own votes; everyone sees
+-- every vote once the session is revealed; nobody sees anyone else's votes
+-- before that.
+create policy "votes are selectable when own or revealed"
+  on votes for select
+  using (
+    user_id = auth.uid()
+    or exists (
+      select 1 from vote_sessions s
+      where s.id = session_id and s.revealed and has_map_access(s.map_id, 'view')
+    )
+  );
+
+-- Budget enforcement lives in the insert policy itself: a vote is only
+-- accepted while the caller is under their per-person allowance for the
+-- (still-active) session they're voting in.
+create policy "votes are insertable within the session budget"
+  on votes for insert
+  with check (
+    user_id = auth.uid()
+    and (
+      select count(*) from votes v
+      where v.session_id = votes.session_id and v.user_id = auth.uid()
+    ) < (
+      select votes_per_person from vote_sessions s
+      where s.id = votes.session_id and s.active
+    )
+  );
+
+create policy "votes are deletable by their voter"
+  on votes for delete
+  using (user_id = auth.uid());
+
+-- ═══════════════════════════════════════════════════════════════════════
 -- REALTIME — stream row changes for live sync (Presence/Broadcast need no
 -- publication setup, only Postgres Changes does).
 -- ═══════════════════════════════════════════════════════════════════════
 alter publication supabase_realtime add table tiles;
 alter publication supabase_realtime add table links;
 alter publication supabase_realtime add table map_shares;
+alter publication supabase_realtime add table comments;
+alter publication supabase_realtime add table vote_sessions;
+alter publication supabase_realtime add table votes;

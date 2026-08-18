@@ -5,6 +5,7 @@
 export function rowToTile(row) {
   return {
     id: row.id,
+    kind: row.kind || "tile",
     type: row.type,
     shape: row.shape,
     title: row.title,
@@ -24,6 +25,7 @@ export function tileToRow(t, mapId) {
   return {
     id: t.id,
     map_id: mapId,
+    kind: t.kind || "tile",
     type: t.type,
     shape: t.shape || "rectangle",
     title: t.title || "",

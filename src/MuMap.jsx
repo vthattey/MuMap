@@ -3,11 +3,13 @@ import { useNavigate } from "react-router-dom";
 import {
   Download, Upload, X, Trash2, ArrowLeft, Share2, Eye,
   ZoomIn, ZoomOut, Maximize, Undo2, Redo2, Copy, Move,
-  Square, Circle, RectangleHorizontal,
+  Square, Circle, RectangleHorizontal, Frame as FrameIcon,
+  MessageSquare, Send, Vote as VoteIcon, Plus, Minus,
 } from "lucide-react";
 import { useBoardSync } from "./hooks/useBoardSync.js";
 import { useMapPermission } from "./hooks/useMapPermission.js";
-import { TILE_TYPES, SHAPES, SWATCHES, makeTile, makeLink } from "./lib/boardModel.js";
+import { useAuth } from "./auth/AuthContext.jsx";
+import { TILE_TYPES, SHAPES, SWATCHES, STATUSES, makeTile, makeFrame, makeLink } from "./lib/boardModel.js";
 import ShareMapPanel from "./components/ShareMapPanel.jsx";
 
 const SHAPE_ICONS = { square: Square, rectangle: RectangleHorizontal, circle: Circle };
@@ -52,6 +54,14 @@ function screenToBoard(clientX, clientY, boardEl, zoom, panX, panY) {
     x: (clientX - rect.left - panX) / zoom,
     y: (clientY - rect.top - panY) / zoom,
   };
+}
+
+// Is `inner`'s bounding box fully enclosed by `outer`'s? Used to decide which
+// tiles a frame carries along when it's dragged — only tiles fully inside
+// the frame move with it, not ones merely overlapping its edge.
+function isFullyEnclosed(inner, outer) {
+  return inner.x >= outer.x && inner.y >= outer.y &&
+    inner.x + inner.w <= outer.x + outer.w && inner.y + inner.h <= outer.y + outer.h;
 }
 
 function anchorPoint(t, side) {
@@ -101,6 +111,7 @@ function dotPositionStyle(side) {
 // ═══════════════════════════════════════════════════════════════════════════
 export default function MuMap({ mapId }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   // ---- Access control ----
   const { loading: permLoading, map: mapRow, permission } = useMapPermission(mapId);
@@ -111,6 +122,8 @@ export default function MuMap({ mapId }) {
   const {
     tiles, links, dispatch, canUndo, canRedo, loaded,
     collaborators, remoteCursors, broadcastTileUpdates, broadcastCursor,
+    comments, authorProfiles, addComment, deleteComment,
+    voteSession, votes, startVoteSession, endVoteSession, castVote, retractVote,
   } = useBoardSync(permission ? mapId : null); // don't fetch/subscribe until access is confirmed
 
   const [shareOpen, setShareOpen] = useState(false);
@@ -128,6 +141,10 @@ export default function MuMap({ mapId }) {
   const [connecting, setConnecting] = useState(null); // {fromId, side, x, y} board coords
   const [connectTarget, setConnectTarget] = useState(null);
   const [quickCreate, setQuickCreate] = useState(null); // {x, y, fromId} board coords — drag-to-empty-space create menu
+  const [commentsOpenForId, setCommentsOpenForId] = useState(null);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [voteStartOpen, setVoteStartOpen] = useState(false);
+  const [voteBudgetDraft, setVoteBudgetDraft] = useState(3);
 
   // ---- Refs ----
   const boardRef = useRef(null);
@@ -138,7 +155,8 @@ export default function MuMap({ mapId }) {
   const connectingRef = useRef(null); // connector-dot drag
   const fileInputRef = useRef(null);
   const surfaceRef = useRef(null);    // the transformed board surface (empty-canvas hit target)
-  const wasSoleSelectedRef = useRef(false); // did this pointerdown land on the one already-selected tile?
+  const wasSoleSelectedRef = useRef(false); // did this pointerdown land on the one already-selected, already-armed tile?
+  const armedTileIdRef = useRef(null); // tile primed by a genuine prior click — its next plain click enters edit
   const clickTrackRef = useRef({ id: null, t: 0 }); // last tile click, for manual double-click detection
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -236,16 +254,29 @@ export default function MuMap({ mapId }) {
     addTileAt("user-story", cx, cy, shapeKey);
   }, [addTileAt, pan, zoom, readOnly]);
 
+  const addFrameInView = useCallback(() => {
+    if (readOnly) return;
+    const el = boardRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const f = makeFrame((r.width / 2 - pan.x) / zoom - 240, (r.height / 2 - pan.y) / zoom - 180);
+    dispatch({ type: "ADD_TILE", tile: f });
+    setEditingId(f.id);
+    setSelection(new Set([f.id]));
+  }, [dispatch, pan, zoom, readOnly]);
+
   const duplicateSelection = useCallback(() => {
     if (readOnly) return;
     const sel = tiles.filter((t) => selection.has(t.id));
     if (sel.length === 0) return;
     const idMap = new Map();
     const dupes = sel.map((t) => {
-      const nt = makeTile(t.type, t.shape, t.x + 30, t.y + 30, {
-        title: t.title, content: t.content, color: t.color,
-        w: t.w, h: t.h, tags: [...t.tags], status: t.status, points: t.points,
-      });
+      const nt = t.kind === "frame"
+        ? makeFrame(t.x + 30, t.y + 30, { title: t.title, color: t.color, w: t.w, h: t.h })
+        : makeTile(t.type, t.shape, t.x + 30, t.y + 30, {
+          title: t.title, content: t.content, color: t.color,
+          w: t.w, h: t.h, tags: [...t.tags], status: t.status, points: t.points,
+        });
       idMap.set(t.id, nt.id);
       return nt;
     });
@@ -272,6 +303,7 @@ export default function MuMap({ mapId }) {
   // ═══════════════════════════════════════════════════════════════════════
   const onBoardPointerDown = useCallback((e) => {
     if (quickCreate) { setQuickCreate(null); setConnecting(null); }
+    if (commentsOpenForId) setCommentsOpenForId(null);
     if (e.button === 1 || (e.button === 0 && mode === "pan")) {
       // Pan
       panRef.current = { startX: e.clientX, startY: e.clientY, startPan: { ...pan } };
@@ -288,7 +320,7 @@ export default function MuMap({ mapId }) {
       e.currentTarget.setPointerCapture(e.pointerId);
       e.preventDefault();
     }
-  }, [mode, pan, zoom, quickCreate]);
+  }, [mode, pan, zoom, quickCreate, commentsOpenForId]);
 
   const onBoardPointerMove = useCallback((e) => {
     // Live cursor for collaborators — fires regardless of what else is happening.
@@ -300,7 +332,7 @@ export default function MuMap({ mapId }) {
       const bp = screenToBoard(e.clientX, e.clientY, boardRef.current, zoom, pan.x, pan.y);
       setConnecting((c) => (c ? { ...c, x: bp.x, y: bp.y } : c));
       const target = tiles.find((t) =>
-        t.id !== connectingRef.current.fromId &&
+        t.kind !== "frame" && t.id !== connectingRef.current.fromId &&
         bp.x >= t.x && bp.x <= t.x + t.w && bp.y >= t.y && bp.y <= t.y + t.h
       );
       setConnectTarget(target ? target.id : null);
@@ -367,7 +399,7 @@ export default function MuMap({ mapId }) {
         const sourceTile = tiles.find((t) => t.id === fromId);
         const anchor = sourceTile ? anchorPoint(sourceTile, side) : bp;
         if (Math.hypot(bp.x - anchor.x, bp.y - anchor.y) > 30) {
-          setQuickCreate({ x: bp.x, y: bp.y, fromId });
+          setQuickCreate({ x: bp.x, y: bp.y, fromId, type: sourceTile?.type || "user-story" });
           // Freeze the preview arrow pointing at the menu instead of
           // clearing it — it stays on screen until a shape is picked (it
           // becomes the real link) or the menu is dismissed.
@@ -430,8 +462,10 @@ export default function MuMap({ mapId }) {
         if (isDoubleClick || wasSoleSelectedRef.current) {
           setEditingId(id);
           clickTrackRef.current = { id: null, t: 0 };
+          armedTileIdRef.current = null;
         } else {
           clickTrackRef.current = { id, t: now };
+          armedTileIdRef.current = id;
         }
       }
       dragRef.current = null;
@@ -466,8 +500,13 @@ export default function MuMap({ mapId }) {
     }
 
     // A second click on an already (and solely) selected tile enters inline
-    // text editing — captured here, before selection changes below.
-    wasSoleSelectedRef.current = !readOnly && !e.shiftKey && selection.size === 1 && selection.has(tile.id);
+    // text editing — captured here, before selection changes below. Being
+    // the sole selection isn't enough on its own (a freshly created tile is
+    // auto-selected too, which would make its very first click re-enter
+    // edit instead of just letting you select/drag/link it) — the tile
+    // must also have been armed by an earlier genuine click.
+    wasSoleSelectedRef.current = !readOnly && !e.shiftKey && selection.size === 1 && selection.has(tile.id)
+      && armedTileIdRef.current === tile.id;
 
     // Start tile drag
     let dragIds;
@@ -488,8 +527,24 @@ export default function MuMap({ mapId }) {
     }
 
     if (readOnly) return;
+
+    // A frame carries its contents: whichever regular tiles are fully
+    // enclosed by the frame's bounds *at the moment the drag starts* move
+    // together with it. Captured once here rather than re-evaluated during
+    // the drag, so a tile that's only partially dragged across the frame's
+    // edge doesn't flicker in and out of the group mid-gesture. `selection`
+    // deliberately stays just the frame's own id (set above) so the mini
+    // toolbar still targets the frame, not a confusing tile/frame mix.
+    let moveIds = dragIds || selection;
+    if (tile.kind === "frame" && !e.shiftKey) {
+      const carried = tiles
+        .filter((t) => t.kind !== "frame" && t.id !== tile.id && isFullyEnclosed(t, tile))
+        .map((t) => t.id);
+      if (carried.length) moveIds = new Set([...moveIds, ...carried]);
+    }
+
     dragRef.current = {
-      ids: dragIds || selection,
+      ids: moveIds,
       lastX: bp.x,
       lastY: bp.y,
       startClientX: e.clientX,
@@ -497,7 +552,7 @@ export default function MuMap({ mapId }) {
       moved: false,
     };
     boardRef.current.setPointerCapture(e.pointerId);
-  }, [zoom, pan, selection, editingId, readOnly, quickCreate]);
+  }, [zoom, pan, selection, editingId, readOnly, quickCreate, tiles]);
 
   // ---- Connector dot pointer down → start link drag ----
   const onDotPointerDown = useCallback((e, tile, side) => {
@@ -596,6 +651,10 @@ export default function MuMap({ mapId }) {
   }, [dispatch, showToast]);
 
   const singleSelectedTile = selection.size === 1 ? tiles.find((t) => selection.has(t.id)) : null;
+  // Frames render in their own pass, before regular tiles, so they always
+  // sit visually behind them regardless of selection/z-index.
+  const frameTiles = tiles.filter((t) => t.kind === "frame");
+  const regularTiles = tiles.filter((t) => t.kind !== "frame");
 
   // ═══════════════════════════════════════════════════════════════════════
   // MINIMAP
@@ -679,6 +738,33 @@ export default function MuMap({ mapId }) {
             </div>
           )}
 
+          {voteSession?.active && !isOwner && (
+            <div style={styles.voteStatusBadge}>
+              <VoteIcon size={12} />
+              {(voteSession.votes_per_person - votes.filter((v) => v.session_id === voteSession.id && v.user_id === user?.id).length)} votes left
+            </div>
+          )}
+
+          {isOwner && (
+            <div style={{ position: "relative" }}>
+              {voteSession?.active ? (
+                <button className="toolbtn" style={styles.btn} onClick={endVoteSession}><VoteIcon size={14} /> End vote</button>
+              ) : (
+                <button className="toolbtn" style={styles.btn} onClick={() => setVoteStartOpen((o) => !o)}><VoteIcon size={14} /> Vote</button>
+              )}
+              {voteStartOpen && (
+                <div style={styles.voteStartPopover} onPointerDown={(e) => e.stopPropagation()}>
+                  <label style={styles.voteStartLabel}>Votes per person</label>
+                  <input type="number" min="1" style={styles.voteStartInput} value={voteBudgetDraft}
+                    onChange={(e) => setVoteBudgetDraft(Math.max(1, Number(e.target.value) || 1))} />
+                  <button style={styles.voteStartBtn} onClick={() => { startVoteSession(voteBudgetDraft); setVoteStartOpen(false); }}>
+                    Start voting
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {isOwner && (
             <button className="toolbtn" style={styles.btn} onClick={() => setShareOpen(true)}><Share2 size={14} /> Share</button>
           )}
@@ -744,6 +830,12 @@ export default function MuMap({ mapId }) {
                 </button>
               );
             })}
+
+            <div style={{ ...styles.sidebarLabel, marginTop: 6 }}>Organize</div>
+            <button className="shape-btn" style={styles.shapeBtn} onClick={addFrameInView} title="Add a frame">
+              <span style={styles.shapePreview}><FrameIcon size={24} strokeWidth={1.75} color={INK_SOFT} /></span>
+              <span>Frame</span>
+            </button>
           </div>
         )}
 
@@ -803,6 +895,12 @@ export default function MuMap({ mapId }) {
                         stroke={isSel ? LINK_SELECTED : LINK_COLOR} strokeWidth={isSel ? 2.75 : 2}
                         strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "none" }}
                         markerEnd={l.directed ? `url(#${isSel ? "arrow-selected" : "arrow-default"})` : undefined} />
+                      {l.label && !isSel && (
+                        <text x={(p1.x + p2.x) / 2} y={(p1.y + p2.y) / 2 - 6}
+                          textAnchor="middle" fontSize={11} fontWeight={600} fontFamily={FONT}
+                          fill={INK_SOFT} stroke={BOARD_BG} strokeWidth={4} paintOrder="stroke"
+                          style={{ pointerEvents: "none" }}>{l.label}</text>
+                      )}
                     </g>
                   );
                 })}
@@ -841,20 +939,89 @@ export default function MuMap({ mapId }) {
                 const p2 = anchorPoint(to, toSide);
                 const cx = (p1.x + p2.x) / 2, cy = (p1.y + p2.y) / 2;
                 return (
-                  <button style={{ ...styles.removeLinkBtn, left: cx - 14, top: cy - 14 }}
-                    onClick={(e) => { e.stopPropagation(); dispatch({ type: "DELETE_LINK", id: selectedLink }); setSelectedLink(null); }}
-                    title="Remove link"><X size={14} /></button>
+                  <React.Fragment>
+                    <button style={{ ...styles.removeLinkBtn, left: cx - 14, top: cy - 14 }}
+                      onClick={(e) => { e.stopPropagation(); dispatch({ type: "DELETE_LINK", id: selectedLink }); setSelectedLink(null); }}
+                      title="Remove link"><X size={14} /></button>
+                    <input
+                      style={{ ...styles.linkLabelInput, left: cx - 55, top: cy + 12 }}
+                      placeholder="Label…"
+                      value={l.label}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onChange={(e) => dispatch({ type: "UPDATE_LINK", id: l.id, patch: { label: e.target.value }, _silent: true })}
+                      onBlur={() => dispatch({ type: "UPDATE_LINK", id: l.id, patch: { label: l.label } })}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur(); }}
+                    />
+                  </React.Fragment>
                 );
               })()}
 
+              {/* FRAMES — organizing regions, rendered behind regular tiles */}
+              {frameTiles.map((t) => {
+                const isSel = selection.has(t.id);
+                return (
+                  <div key={t.id} className="tile"
+                    style={{
+                      ...styles.frame,
+                      left: t.x, top: t.y, width: t.w, minHeight: t.h,
+                      borderColor: isSel ? ACCENT : t.color,
+                      background: `${t.color}14`,
+                      outline: isSel ? `2px solid ${ACCENT}` : "none",
+                      outlineOffset: 2,
+                    }}
+                    onPointerDown={(e) => onTilePointerDown(e, t)}
+                    onClick={(e) => onTileClick(e, t)}
+                    onDoubleClick={(e) => onTileDoubleClick(e, t)}
+                  >
+                    <div style={{ ...styles.frameTab, background: isSel ? ACCENT : t.color }}>
+                      {editingId === t.id ? (
+                        <div onPointerDown={(e) => e.stopPropagation()}
+                          onBlur={(e) => {
+                            if (!e.currentTarget.contains(e.relatedTarget)) {
+                              dispatch({ type: "UPDATE_TILE", id: t.id, patch: { title: t.title } });
+                              setEditingId(null);
+                              if (armedTileIdRef.current === t.id) armedTileIdRef.current = null;
+                            }
+                          }}>
+                          <input
+                            autoFocus
+                            style={styles.frameTabInput}
+                            value={t.title}
+                            placeholder="Frame"
+                            onChange={(e) => dispatch({ type: "UPDATE_TILE", id: t.id, patch: { title: e.target.value }, _silent: true })}
+                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur(); }}
+                          />
+                        </div>
+                      ) : (
+                        <span>{t.title || "Frame"}</span>
+                      )}
+                    </div>
+
+                    {!readOnly && (
+                      <div className="resize-handle" style={styles.resizeHandle}
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          resizeRef.current = { id: t.id };
+                          boardRef.current.setPointerCapture(e.pointerId);
+                        }}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+
               {/* TILES */}
-              {tiles.map((t) => {
+              {regularTiles.map((t) => {
                 const isSel = selection.has(t.id);
                 const isConnectTarget = connecting && connectTarget === t.id;
                 const isConnectSource = connecting && connecting.fromId === t.id;
                 const isCircle = t.shape === "circle";
                 const showDots = !readOnly && mode === "select" && !editingId &&
                   (isConnectSource || (!connecting && (hoveredTileId === t.id || isSel)));
+                const tileComments = comments.filter((c) => c.tile_id === t.id);
+                const myTileVotes = voteSession ? votes.filter((v) => v.session_id === voteSession.id && v.tile_id === t.id && v.user_id === user?.id) : [];
+                const myTotalVotes = voteSession ? votes.filter((v) => v.session_id === voteSession.id && v.user_id === user?.id).length : 0;
+                const tileVoteTotal = voteSession ? votes.filter((v) => v.session_id === voteSession.id && v.tile_id === t.id).length : 0;
                 return (
                   <div key={t.id} className="tile"
                     style={{
@@ -879,12 +1046,43 @@ export default function MuMap({ mapId }) {
                     onClick={(e) => onTileClick(e, t)}
                     onDoubleClick={(e) => onTileDoubleClick(e, t)}
                   >
-                    <div style={styles.tileBadge}>{TILE_TYPES[t.type]?.short || "•"}</div>
+                    <div style={styles.cornerBadges} onPointerDown={(e) => e.stopPropagation()}>
+                      {t.points != null && <div style={styles.pointsBadge}>{t.points}</div>}
+                      <button className="comment-btn" style={styles.commentBadge}
+                        onClick={(e) => { e.stopPropagation(); setCommentsOpenForId((id) => (id === t.id ? null : t.id)); }}
+                        title="Comments">
+                        <MessageSquare size={11} />
+                        {tileComments.length > 0 && <span>{tileComments.length}</span>}
+                      </button>
+                    </div>
+                    <div style={styles.tileHeaderRow}>
+                      <div style={styles.tileBadge}>{TILE_TYPES[t.type]?.short || "•"}</div>
+                      {t.status && t.status !== "none" && STATUSES[t.status] && (
+                        <div style={styles.statusPill}>
+                          <span style={{ ...styles.statusDot, background: STATUSES[t.status].color }} />
+                          {STATUSES[t.status].label}
+                        </div>
+                      )}
+                    </div>
+                    {t.tags.length > 0 && (
+                      <div style={styles.tagsRow}>
+                        {t.tags.map((tag) => <span key={tag} style={styles.tagPill}>{tag}</span>)}
+                      </div>
+                    )}
                     {editingId === t.id ? (
                       <div
                         style={{ width: "100%" }}
                         onPointerDown={(e) => e.stopPropagation()}
-                        onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setEditingId(null); }}
+                        onBlur={(e) => {
+                          if (!e.currentTarget.contains(e.relatedTarget)) {
+                            setEditingId(null);
+                            // Finishing an edit shouldn't leave the tile primed to
+                            // re-open on the very next click — that next click
+                            // should just select/allow a drag, same as any other
+                            // tile the user hasn't clicked yet.
+                            if (armedTileIdRef.current === t.id) armedTileIdRef.current = null;
+                          }
+                        }}
                       >
                         <input
                           autoFocus
@@ -927,6 +1125,27 @@ export default function MuMap({ mapId }) {
                         onPointerDown={(e) => onDotPointerDown(e, t, side)}
                       />
                     ))}
+
+                    {/* Dot-voting widget — only while a session exists for this map */}
+                    {voteSession && (voteSession.active || voteSession.revealed) && (
+                      <div style={styles.voteWidget} onPointerDown={(e) => e.stopPropagation()}>
+                        {voteSession.revealed ? (
+                          <span style={styles.voteCount}><VoteIcon size={11} /> {tileVoteTotal}</span>
+                        ) : (
+                          <>
+                            <button style={styles.voteBtn} disabled={readOnly || myTileVotes.length === 0}
+                              onClick={() => retractVote(myTileVotes[myTileVotes.length - 1].id)}>
+                              <Minus size={11} />
+                            </button>
+                            <span style={styles.voteCount}>{myTileVotes.length}</span>
+                            <button style={styles.voteBtn} disabled={readOnly || myTotalVotes >= voteSession.votes_per_person}
+                              onClick={() => castVote(t.id)}>
+                              <Plus size={11} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -971,45 +1190,94 @@ export default function MuMap({ mapId }) {
           )}
 
           {/* ════════ MINI TOOLBAR — floats above the single selected tile ════════ */}
-          {!readOnly && singleSelectedTile && mode === "select" && !connecting && (() => {
+          {!readOnly && singleSelectedTile && singleSelectedTile.kind !== "frame" && mode === "select" && !connecting && (() => {
+            const left = singleSelectedTile.x * zoom + pan.x + (singleSelectedTile.w * zoom) / 2;
+            const top = singleSelectedTile.y * zoom + pan.y;
+            const patchTile = (patch) => dispatch({ type: "UPDATE_TILE", id: singleSelectedTile.id, patch });
+            return (
+              <div style={{ ...styles.miniToolbar, left, top: top - 86, flexDirection: "column", alignItems: "stretch" }} onPointerDown={(e) => e.stopPropagation()}>
+                <div style={styles.miniToolbarRow}>
+                  <select value={singleSelectedTile.type} onChange={(e) => {
+                    const type = e.target.value;
+                    patchTile({ type, color: TILE_TYPES[type].color });
+                  }} style={styles.miniSelect} title="Type">
+                    {Object.entries(TILE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+
+                  <div style={styles.miniSep} />
+
+                  {SWATCHES.map((c) => (
+                    <button key={c} onClick={() => patchTile({ color: c })}
+                      style={{ ...styles.miniSwatch, background: c, outline: singleSelectedTile.color === c ? `2px solid ${ACCENT}` : `1px solid ${BORDER}` }} />
+                  ))}
+
+                  <div style={styles.miniSep} />
+
+                  {Object.entries(SHAPES).map(([key, s]) => {
+                    const Icon = SHAPE_ICONS[key];
+                    const isActive = (singleSelectedTile.shape || "rectangle") === key;
+                    return (
+                      <button key={key} onClick={() => patchTile({ shape: key })}
+                        style={{ ...styles.miniShapeBtn, outline: isActive ? `2px solid ${ACCENT}` : `1px solid ${BORDER}` }}
+                        title={s.label}>
+                        <Icon size={13} strokeWidth={1.75} color={INK_SOFT} />
+                      </button>
+                    );
+                  })}
+
+                  <div style={styles.miniSep} />
+
+                  <button style={styles.miniDeleteBtn} title="Delete" onClick={() => {
+                    dispatch({ type: "DELETE_TILES", ids: [singleSelectedTile.id] });
+                    setEditingId(null); setSelection(new Set());
+                  }}><Trash2 size={13} /></button>
+                </div>
+
+                <div style={styles.miniToolbarRow}>
+                  <select value={singleSelectedTile.status || "none"} onChange={(e) => patchTile({ status: e.target.value })}
+                    style={styles.miniSelect} title="Status">
+                    {Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                  <input type="number" min="0" style={styles.miniPointsInput} placeholder="Pts"
+                    value={singleSelectedTile.points ?? ""} title="Points"
+                    onChange={(e) => patchTile({ points: e.target.value === "" ? null : Number(e.target.value) })} />
+                  <input type="text" style={styles.miniTagInput} placeholder="+ tag"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && e.currentTarget.value.trim()) {
+                        const tag = e.currentTarget.value.trim();
+                        if (!singleSelectedTile.tags.includes(tag)) patchTile({ tags: [...singleSelectedTile.tags, tag] });
+                        e.currentTarget.value = "";
+                      }
+                    }} />
+                  {singleSelectedTile.tags.map((tag) => (
+                    <span key={tag} style={styles.miniTagPill}>
+                      {tag}
+                      <button style={styles.miniTagRemove}
+                        onClick={() => patchTile({ tags: singleSelectedTile.tags.filter((t) => t !== tag) })}>×</button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ════════ FRAME MINI TOOLBAR — reduced controls, no type/shape ════════ */}
+          {!readOnly && singleSelectedTile && singleSelectedTile.kind === "frame" && mode === "select" && !connecting && (() => {
             const left = singleSelectedTile.x * zoom + pan.x + (singleSelectedTile.w * zoom) / 2;
             const top = singleSelectedTile.y * zoom + pan.y;
             return (
               <div style={{ ...styles.miniToolbar, left, top: top - 46 }} onPointerDown={(e) => e.stopPropagation()}>
-                <select value={singleSelectedTile.type} onChange={(e) => {
-                  const type = e.target.value;
-                  dispatch({ type: "UPDATE_TILE", id: singleSelectedTile.id, patch: { type, color: TILE_TYPES[type].color } });
-                }} style={styles.miniSelect} title="Type">
-                  {Object.entries(TILE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                </select>
-
-                <div style={styles.miniSep} />
-
-                {SWATCHES.map((c) => (
-                  <button key={c} onClick={() => dispatch({ type: "UPDATE_TILE", id: singleSelectedTile.id, patch: { color: c } })}
-                    style={{ ...styles.miniSwatch, background: c, outline: singleSelectedTile.color === c ? `2px solid ${ACCENT}` : `1px solid ${BORDER}` }} />
-                ))}
-
-                <div style={styles.miniSep} />
-
-                {Object.entries(SHAPES).map(([key, s]) => {
-                  const Icon = SHAPE_ICONS[key];
-                  const isActive = (singleSelectedTile.shape || "rectangle") === key;
-                  return (
-                    <button key={key} onClick={() => dispatch({ type: "UPDATE_TILE", id: singleSelectedTile.id, patch: { shape: key } })}
-                      style={{ ...styles.miniShapeBtn, outline: isActive ? `2px solid ${ACCENT}` : `1px solid ${BORDER}` }}
-                      title={s.label}>
-                      <Icon size={13} strokeWidth={1.75} color={INK_SOFT} />
-                    </button>
-                  );
-                })}
-
-                <div style={styles.miniSep} />
-
-                <button style={styles.miniDeleteBtn} title="Delete" onClick={() => {
-                  dispatch({ type: "DELETE_TILES", ids: [singleSelectedTile.id] });
-                  setEditingId(null); setSelection(new Set());
-                }}><Trash2 size={13} /></button>
+                <div style={styles.miniToolbarRow}>
+                  {SWATCHES.map((c) => (
+                    <button key={c} onClick={() => dispatch({ type: "UPDATE_TILE", id: singleSelectedTile.id, patch: { color: c } })}
+                      style={{ ...styles.miniSwatch, background: c, outline: singleSelectedTile.color === c ? `2px solid ${ACCENT}` : `1px solid ${BORDER}` }} />
+                  ))}
+                  <div style={styles.miniSep} />
+                  <button style={styles.miniDeleteBtn} title="Delete frame (keeps its contents)" onClick={() => {
+                    dispatch({ type: "DELETE_TILES", ids: [singleSelectedTile.id] });
+                    setEditingId(null); setSelection(new Set());
+                  }}><Trash2 size={13} /></button>
+                </div>
               </div>
             );
           })()}
@@ -1033,22 +1301,87 @@ export default function MuMap({ mapId }) {
               <div style={{ ...styles.quickCreateMenu, left, top }} onPointerDown={(e) => e.stopPropagation()}>
                 {sourceTile && (
                   <button style={styles.quickCreateBtn}
-                    onClick={() => createLinkedTile(sourceTile.type, sourceTile.shape, { color: sourceTile.color })}>
+                    onClick={() => createLinkedTile(
+                      quickCreate.type, sourceTile.shape,
+                      quickCreate.type === sourceTile.type ? { color: sourceTile.color } : {}
+                    )}>
                     <Copy size={13} /> Same shape
                   </button>
                 )}
-                <div style={styles.quickCreateLabel}>Or pick a shape</div>
+                <div style={styles.quickCreateLabel}>Or pick a type + shape</div>
+                <select value={quickCreate.type} style={styles.quickCreateTypeSelect}
+                  onChange={(e) => setQuickCreate((qc) => ({ ...qc, type: e.target.value }))}>
+                  {Object.entries(TILE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
                 <div style={styles.quickCreateShapesRow}>
                   {Object.entries(SHAPES).map(([key, s]) => {
                     const Icon = SHAPE_ICONS[key];
                     return (
                       <button key={key} style={styles.quickCreateShapeBtn} title={s.label}
-                        onClick={() => createLinkedTile("user-story", key)}>
+                        onClick={() => createLinkedTile(quickCreate.type, key)}>
                         <Icon size={16} strokeWidth={1.75} color={INK_SOFT} />
                       </button>
                     );
                   })}
                 </div>
+              </div>
+            );
+          })()}
+
+          {/* ════════ COMMENTS POPOVER ════════ */}
+          {commentsOpenForId && (() => {
+            const t = tiles.find((tt) => tt.id === commentsOpenForId);
+            if (!t) return null;
+            const left = t.x * zoom + pan.x + (t.w * zoom) / 2;
+            const top = t.y * zoom + pan.y + t.h * zoom;
+            const list = comments.filter((c) => c.tile_id === t.id);
+            const submit = () => {
+              if (!commentDraft.trim()) return;
+              addComment(t.id, commentDraft);
+              setCommentDraft("");
+            };
+            return (
+              <div style={{ ...styles.commentsPopover, left, top: top + 10 }} onPointerDown={(e) => e.stopPropagation()}>
+                <div style={styles.commentsHeader}>
+                  <span>Comments</span>
+                  <button style={styles.commentsCloseBtn} onClick={() => setCommentsOpenForId(null)}><X size={13} /></button>
+                </div>
+                <div style={styles.commentsList}>
+                  {list.length === 0 && <div style={styles.commentsEmpty}>No comments yet.</div>}
+                  {list.map((c) => {
+                    const author = authorProfiles[c.author_id];
+                    const mine = c.author_id === user?.id;
+                    return (
+                      <div key={c.id} style={styles.commentRow}>
+                        <div style={{ ...styles.commentAvatar, background: author?.color || ACCENT }}>
+                          {(author?.display_name || "?").slice(0, 1).toUpperCase()}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={styles.commentMeta}>
+                            <span style={styles.commentAuthor}>{author?.display_name || "Someone"}</span>
+                            <span style={styles.commentTime}>{new Date(c.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+                          </div>
+                          <div style={styles.commentBody}>{c.body}</div>
+                        </div>
+                        {mine && (
+                          <button style={styles.commentDeleteBtn} title="Delete" onClick={() => deleteComment(c.id)}><X size={11} /></button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {!readOnly && (
+                  <div style={styles.commentInputRow}>
+                    <input
+                      style={styles.commentInput}
+                      placeholder="Add a comment…"
+                      value={commentDraft}
+                      onChange={(e) => setCommentDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+                    />
+                    <button style={styles.commentSendBtn} onClick={submit}><Send size={13} /></button>
+                  </div>
+                )}
               </div>
             );
           })()}
@@ -1077,6 +1410,11 @@ const styles = {
 
   // View-only badge
   viewOnlyBadge: { display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 999, background: SUBTLE_BG, color: INK_SOFT, fontSize: 11.5, fontWeight: 700 },
+  voteStatusBadge: { display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 999, background: ACCENT_SOFT, color: ACCENT, fontSize: 11.5, fontWeight: 700, whiteSpace: "nowrap" },
+  voteStartPopover: { position: "absolute", top: "calc(100% + 6px)", right: 0, display: "flex", flexDirection: "column", gap: 8, background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12, boxShadow: "0 12px 28px rgba(31,41,55,0.2)", zIndex: 40, width: 170 },
+  voteStartLabel: { fontSize: 11, fontWeight: 700, color: INK_SOFT },
+  voteStartInput: { padding: "6px 8px", borderRadius: 7, border: `1px solid ${BORDER}`, fontSize: 13, color: INK, fontFamily: FONT },
+  voteStartBtn: { padding: "7px 10px", borderRadius: 7, border: "none", background: ACCENT, color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
 
   // Collaborator avatars
   avatarStack: { display: "flex", alignItems: "center", marginRight: 4 },
@@ -1108,18 +1446,37 @@ const styles = {
 
   // Tiles
   tile: { position: "absolute", borderRadius: 14, padding: "14px 14px 12px", boxSizing: "border-box", fontFamily: FONT, userSelect: "none", touchAction: "none" },
-  tileBadge: { fontSize: 9.5, fontWeight: 700, letterSpacing: 0.5, color: "rgba(31,41,55,0.45)", marginBottom: 3 },
+
+  // Frames — organizing regions, drawn behind regular tiles
+  frame: { position: "absolute", borderRadius: 10, border: "2px dashed", boxSizing: "border-box", cursor: "grab", touchAction: "none", zIndex: 0 },
+  frameTab: { position: "absolute", top: -13, left: 12, padding: "3px 10px", borderRadius: 6, fontFamily: FONT, fontWeight: 700, fontSize: 12, color: "#fff", userSelect: "none", maxWidth: "80%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  frameTabInput: { fontFamily: FONT, fontWeight: 700, fontSize: 12, color: "#fff", background: "transparent", border: "none", outline: "none", width: 140 },
+  tileBadge: { fontSize: 9.5, fontWeight: 700, letterSpacing: 0.5, color: "rgba(31,41,55,0.45)" },
+  tileHeaderRow: { display: "flex", alignItems: "center", gap: 6, marginBottom: 3 },
+  statusPill: { display: "inline-flex", alignItems: "center", gap: 4, fontSize: 9, fontWeight: 700, color: "rgba(31,41,55,0.6)", background: "rgba(31,41,55,0.06)", padding: "2px 6px", borderRadius: 999 },
+  statusDot: { width: 6, height: 6, borderRadius: "50%", flexShrink: 0 },
+  cornerBadges: { position: "absolute", top: 8, right: 8, display: "flex", alignItems: "center", gap: 4, zIndex: 2 },
+  pointsBadge: { minWidth: 20, height: 20, padding: "0 5px", borderRadius: 999, background: "rgba(31,41,55,0.75)", color: "#fff", fontSize: 10.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" },
+  commentBadge: { display: "flex", alignItems: "center", gap: 3, height: 20, padding: "0 5px", borderRadius: 999, border: "none", background: "rgba(31,41,55,0.12)", color: "rgba(31,41,55,0.65)", fontSize: 10, fontWeight: 700, cursor: "pointer" },
+  tagsRow: { display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 5 },
+  tagPill: { fontSize: 9.5, fontWeight: 600, color: INK_SOFT, background: "rgba(31,41,55,0.08)", padding: "2px 7px", borderRadius: 999 },
   tileTitle: { fontFamily: FONT, fontWeight: 700, fontSize: 14, color: INK, lineHeight: 1.25, wordBreak: "break-word" },
   tileContent: { fontSize: 11.5, color: INK_SOFT, marginTop: 5, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 80, overflow: "hidden" },
   tileTitleInput: { display: "block", width: "100%", fontFamily: FONT, fontWeight: 700, fontSize: 14, color: INK, lineHeight: 1.25, border: "none", background: "transparent", padding: 0, outline: "none" },
   tileContentInput: { display: "block", width: "100%", fontFamily: FONT, fontSize: 11.5, color: INK_SOFT, marginTop: 5, border: "none", background: "transparent", padding: 0, outline: "none", resize: "none", minHeight: 60, maxHeight: 160 },
   resizeHandle: { position: "absolute", bottom: 0, right: 0, width: RESIZE_HANDLE, height: RESIZE_HANDLE, cursor: "nwse-resize", opacity: 0, background: "linear-gradient(135deg, transparent 40%, rgba(31,41,55,0.3) 40%, rgba(31,41,55,0.3) 50%, transparent 50%, transparent 70%, rgba(31,41,55,0.3) 70%)", borderRadius: "0 0 4px 0", transition: "opacity 0.15s" },
 
+  // Dot-voting widget (bottom-left corner of a tile)
+  voteWidget: { position: "absolute", bottom: 8, left: 8, display: "flex", alignItems: "center", gap: 4, background: "rgba(31,41,55,0.75)", borderRadius: 999, padding: "2px 4px" },
+  voteBtn: { width: 16, height: 16, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.2)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 },
+  voteCount: { display: "flex", alignItems: "center", gap: 3, minWidth: 12, textAlign: "center", color: "#fff", fontSize: 10.5, fontWeight: 700 },
+
   // Connector dots (Mural-style link handles)
   connectorDot: { position: "absolute", width: 16, height: 16, borderRadius: "50%", background: "#ffffff", border: `2px solid ${ACCENT}`, cursor: "crosshair", zIndex: 8, boxShadow: "0 1px 3px rgba(31,41,55,0.3)", transition: "transform 0.1s" },
 
   // Link remove
   removeLinkBtn: { position: "absolute", width: 28, height: 28, borderRadius: "50%", border: "none", background: DANGER, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 3px 8px rgba(0,0,0,0.25)", zIndex: 10 },
+  linkLabelInput: { position: "absolute", width: 110, fontFamily: FONT, fontSize: 11.5, fontWeight: 600, color: INK, textAlign: "center", padding: "4px 6px", borderRadius: 6, border: `1px solid ${BORDER}`, background: "#fff", boxShadow: "0 3px 8px rgba(0,0,0,0.15)", zIndex: 10, outline: "none" },
 
   // Minimap
   minimap: { position: "absolute", bottom: 52, right: 10, borderRadius: 6, overflow: "hidden", boxShadow: "0 4px 12px rgba(31,41,55,0.15)", border: `1px solid ${BORDER}`, zIndex: 20 },
@@ -1133,19 +1490,42 @@ const styles = {
   selBtn: { display: "flex", alignItems: "center", gap: 4, border: "none", background: "rgba(255,255,255,0.15)", color: "#fff", padding: "5px 10px", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" },
 
   // Mini toolbar — floats above the single selected tile (screen-space, not scaled by zoom)
-  miniToolbar: { position: "absolute", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: 6, background: "#1f2937", padding: "6px 8px", borderRadius: 10, zIndex: 30, boxShadow: "0 6px 16px rgba(0,0,0,0.25)", whiteSpace: "nowrap" },
+  miniToolbar: { position: "absolute", transform: "translateX(-50%)", display: "flex", gap: 6, background: "#1f2937", padding: "6px 8px", borderRadius: 10, zIndex: 30, boxShadow: "0 6px 16px rgba(0,0,0,0.25)", whiteSpace: "nowrap" },
+  miniToolbarRow: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", maxWidth: 260 },
   miniSep: { width: 1, height: 20, background: "rgba(255,255,255,0.15)" },
   miniSelect: { padding: "4px 6px", borderRadius: 6, border: "none", fontSize: 11.5, fontWeight: 600, color: INK, background: "#fff", maxWidth: 130 },
   miniSwatch: { width: 18, height: 18, borderRadius: "50%", border: "none", cursor: "pointer", flexShrink: 0 },
   miniShapeBtn: { width: 22, height: 22, borderRadius: 6, border: "none", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
   miniDeleteBtn: { width: 24, height: 24, borderRadius: 6, border: "none", background: "rgba(255,255,255,0.12)", color: "#f2a3a3", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  miniPointsInput: { width: 40, padding: "4px 6px", borderRadius: 6, border: "none", fontSize: 11.5, fontWeight: 600, color: INK, background: "#fff" },
+  miniTagInput: { width: 54, padding: "4px 6px", borderRadius: 6, border: "none", fontSize: 11.5, fontWeight: 600, color: INK, background: "#fff" },
+  miniTagPill: { display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 6px", borderRadius: 999, background: "rgba(255,255,255,0.15)", color: "#fff", fontSize: 11, fontWeight: 600 },
+  miniTagRemove: { border: "none", background: "transparent", color: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0 },
 
   // Quick-create menu — dropping a connector on empty canvas (Mural-style)
   quickCreateMenu: { position: "absolute", transform: "translate(-50%, 12px)", display: "flex", flexDirection: "column", gap: 6, background: "#ffffff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 10, boxShadow: "0 12px 28px rgba(31,41,55,0.2)", zIndex: 35, minWidth: 150 },
   quickCreateBtn: { display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderRadius: 8, border: "none", background: SUBTLE_BG, color: INK, fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
   quickCreateLabel: { fontSize: 10, fontWeight: 700, letterSpacing: 0.4, color: INK_FAINT, textTransform: "uppercase", marginTop: 2 },
+  quickCreateTypeSelect: { padding: "6px 8px", borderRadius: 8, border: `1px solid ${BORDER}`, fontSize: 12, fontWeight: 600, color: INK, background: "#fff", width: "100%" },
   quickCreateShapesRow: { display: "flex", gap: 6 },
   quickCreateShapeBtn: { width: 32, height: 32, borderRadius: 8, border: `1px solid ${BORDER}`, background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
+
+  // Comments popover
+  commentsPopover: { position: "absolute", transform: "translateX(-50%)", width: 260, maxHeight: 320, display: "flex", flexDirection: "column", background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, boxShadow: "0 12px 28px rgba(31,41,55,0.2)", zIndex: 36, overflow: "hidden" },
+  commentsHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", borderBottom: `1px solid ${BORDER}`, fontSize: 12, fontWeight: 700, color: INK },
+  commentsCloseBtn: { border: "none", background: "transparent", color: INK_FAINT, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 2 },
+  commentsList: { overflowY: "auto", padding: "6px 10px", display: "flex", flexDirection: "column", gap: 8, minHeight: 40 },
+  commentsEmpty: { fontSize: 12, color: INK_FAINT, padding: "8px 0", textAlign: "center" },
+  commentRow: { display: "flex", gap: 7, alignItems: "flex-start" },
+  commentAvatar: { width: 20, height: 20, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10, fontWeight: 700 },
+  commentMeta: { display: "flex", alignItems: "baseline", gap: 5, flexWrap: "wrap" },
+  commentAuthor: { fontSize: 11.5, fontWeight: 700, color: INK },
+  commentTime: { fontSize: 10, color: INK_FAINT },
+  commentBody: { fontSize: 12.5, color: INK_SOFT, wordBreak: "break-word", marginTop: 1 },
+  commentDeleteBtn: { border: "none", background: "transparent", color: INK_FAINT, cursor: "pointer", padding: 2, flexShrink: 0 },
+  commentInputRow: { display: "flex", gap: 6, padding: 8, borderTop: `1px solid ${BORDER}` },
+  commentInput: { flex: 1, minWidth: 0, padding: "6px 8px", borderRadius: 7, border: `1px solid ${BORDER}`, fontSize: 12.5, color: INK, fontFamily: FONT },
+  commentSendBtn: { border: "none", background: ACCENT, color: "#fff", borderRadius: 7, width: 28, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 },
 
   // Toast
   toast: { position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", background: "#1f2937", color: "#fff", padding: "7px 16px", borderRadius: 20, fontSize: 12, zIndex: 60, boxShadow: "0 6px 16px rgba(0,0,0,0.25)" },
