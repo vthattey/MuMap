@@ -325,17 +325,30 @@ create policy "votes are selectable when own or revealed"
     )
   );
 
--- Budget enforcement lives in the insert policy itself: a vote is only
--- accepted while the caller is under their per-person allowance for the
--- (still-active) session they're voting in.
+-- Budget enforcement — a security-definer helper, not a raw subquery on
+-- votes directly in the policy: a WITH CHECK clause that self-references
+-- its own table triggers Postgres error 42P17 ("infinite recursion
+-- detected in policy for relation votes"), since evaluating the subquery
+-- would itself need to re-run this table's RLS. Same pattern as
+-- has_map_access() bypassing RLS for maps/map_shares above.
+create or replace function votes_used_in_session(target_session_id uuid)
+returns integer
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select count(*)::integer from votes
+  where session_id = target_session_id and user_id = auth.uid();
+$$;
+
+grant execute on function votes_used_in_session(uuid) to authenticated;
+
 create policy "votes are insertable within the session budget"
   on votes for insert
   with check (
     user_id = auth.uid()
-    and (
-      select count(*) from votes v
-      where v.session_id = votes.session_id and v.user_id = auth.uid()
-    ) < (
+    and votes_used_in_session(session_id) < (
       select votes_per_person from vote_sessions s
       where s.id = votes.session_id and s.active
     )
