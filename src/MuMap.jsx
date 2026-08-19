@@ -3,9 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Download, Upload, X, Trash2, ArrowLeft, Share2, Eye,
   ZoomIn, ZoomOut, Maximize, Undo2, Redo2, Copy,
-  Square, Circle, RectangleHorizontal, Frame as FrameIcon,
-  Send, Vote as VoteIcon, MessageSquare, Image as ImageIcon, PenLine,
-  MousePointer2, Hand, Type as TypeIcon, LayoutTemplate,
+  Send, Vote as VoteIcon, MessageSquare,
 } from "lucide-react";
 import { useBoardSync } from "./hooks/useBoardSync.js";
 import { useMapPermission } from "./hooks/useMapPermission.js";
@@ -17,49 +15,10 @@ import { uploadTileImage } from "./lib/imageUpload.js";
 import ShareMapPanel from "./components/ShareMapPanel.jsx";
 import TileNode from "./components/board/TileNode.jsx";
 import DrawingLayer from "./components/board/DrawingLayer.jsx";
+import ToolPill from "./components/board/ToolPill.jsx";
 import { RESIZE_HANDLE } from "./components/board/tileGeometry.js";
 import { tileStyles } from "./components/board/tileStyles.js";
-
-// Simple inline SVGs approximating the flowchart shapes themselves (a
-// stadium, a plain rectangle, a diamond, a parallelogram) rather than
-// reaching for an unrelated lucide glyph — keeps the icon legible as "this
-// is what you'll get" at 18px, per the approved mock. Same call signature
-// as the lucide icons above ({ size, strokeWidth, color }) so they drop
-// into the existing Object.entries(SHAPES) icon-rail/mini-toolbar/quick-
-// create loops unchanged.
-function TerminatorIcon({ size = 18, strokeWidth = 1.75, color }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth}>
-      <rect x="2" y="7" width="20" height="10" rx="5" />
-    </svg>
-  );
-}
-function ProcessIcon({ size = 18, strokeWidth = 1.75, color }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth}>
-      <rect x="3" y="5" width="18" height="14" rx="1.5" />
-    </svg>
-  );
-}
-function DecisionIcon({ size = 18, strokeWidth = 1.75, color }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth}>
-      <path d="M12 2 22 12 12 22 2 12Z" />
-    </svg>
-  );
-}
-function ParallelogramIcon({ size = 18, strokeWidth = 1.75, color }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth}>
-      <path d="M8 5h13l-4 14H3Z" />
-    </svg>
-  );
-}
-
-const SHAPE_ICONS = {
-  square: Square, rectangle: RectangleHorizontal, circle: Circle,
-  terminator: TerminatorIcon, process: ProcessIcon, decision: DecisionIcon, parallelogram: ParallelogramIcon,
-};
+import { SHAPE_ICONS } from "./components/board/shapeIcons.jsx";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DESIGN TOKENS — full light theme
@@ -206,6 +165,7 @@ export default function MuMap({ mapId }) {
   const [voteBudgetDraft, setVoteBudgetDraft] = useState(3);
   const [drawColor, setDrawColor] = useState(DRAW_COLORS[0]);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [shapesOpen, setShapesOpen] = useState(false); // Shapes grid popover — new in the floating-pill redesign
   const [liveStroke, setLiveStroke] = useState(null); // {points, color, width} board coords — in-progress stroke
 
   // ---- Refs ----
@@ -754,7 +714,7 @@ export default function MuMap({ mapId }) {
       else if (e.key === "Escape") {
         setSelection(new Set()); setMode("select");
         connectingRef.current = null; setConnecting(null); setConnectTarget(null);
-        setQuickCreate(null); setTemplatesOpen(false);
+        setQuickCreate(null); setTemplatesOpen(false); setShapesOpen(false);
         drawingRef.current = null; setLiveStroke(null);
       }
       else if (e.key === "=" || e.key === "+") { if (ctrl) { e.preventDefault(); zoomIn(); } }
@@ -863,6 +823,7 @@ export default function MuMap({ mapId }) {
         .toolbtn:hover { background: #e5e7eb !important; }
         .toolicon-btn:hover { background: ${SUBTLE_BG}; }
         .template-flyout-item:hover { background: ${SUBTLE_BG}; }
+        .shape-grid-cell:hover { background: ${SUBTLE_BG}; color: ${INK}; }
         .text-tile:hover { outline-color: rgba(31,41,55,0.25) !important; }
       `}</style>
 
@@ -961,91 +922,30 @@ export default function MuMap({ mapId }) {
         <div style={styles.hintBar}>Drop on a tile to link — release elsewhere to cancel.</div>
       )}
 
-      {/* ════════ MAIN ROW: side panel + board ════════ */}
+      {/* ════════ MAIN ROW: board area (the tool pill floats inside it now, not a flex sibling) ════════ */}
       <div style={styles.mainRow}>
-        {/* ════════ SIDE PANEL — Mural-style icon rail: mode toggle on top, tools below ════════ */}
-        <div style={styles.sidebar}>
-          <div style={styles.sidebarModeRow}>
-            <button className="toolicon-btn" style={{ ...styles.toolIconBtn, ...(mode === "select" ? styles.toolIconBtnActive : null) }}
-              onClick={() => setMode("select")} title="Select">
-              <MousePointer2 size={18} strokeWidth={1.75} color={mode === "select" ? ACCENT : INK_SOFT} />
-            </button>
-            <button className="toolicon-btn" style={{ ...styles.toolIconBtn, ...(mode === "pan" ? styles.toolIconBtnActive : null) }}
-              onClick={() => setMode("pan")} title="Pan (Space)">
-              <Hand size={18} strokeWidth={1.75} color={mode === "pan" ? ACCENT : INK_SOFT} />
-            </button>
-          </div>
-
-          {!readOnly && (
-            <>
-              <div style={styles.sidebarDivider} />
-
-              {Object.entries(SHAPES).map(([key, s]) => {
-                const Icon = SHAPE_ICONS[key];
-                return (
-                  <button key={key} className="toolicon-btn" style={styles.toolIconBtn} onClick={() => addShapeInView(key)} title={`Add ${s.label}`}>
-                    <Icon size={18} strokeWidth={1.75} color={INK_SOFT} />
-                  </button>
-                );
-              })}
-
-              <button className="toolicon-btn" style={styles.toolIconBtn} onClick={addTextInView} title="Add text">
-                <TypeIcon size={18} strokeWidth={1.75} color={INK_SOFT} />
-              </button>
-
-              <button className="toolicon-btn" style={styles.toolIconBtn} onClick={addFrameInView} title="Add a frame">
-                <FrameIcon size={18} strokeWidth={1.75} color={INK_SOFT} />
-              </button>
-
-              <button className="toolicon-btn" style={styles.toolIconBtn} onClick={() => imageInputRef.current?.click()} title="Add an image or GIF">
-                <ImageIcon size={18} strokeWidth={1.75} color={INK_SOFT} />
-              </button>
-              <input ref={imageInputRef} type="file" accept="image/*" style={{ display: "none" }}
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageAt(f); e.target.value = ""; }} />
-
-              <div style={styles.sidebarDivider} />
-
-              <div style={{ position: "relative" }}>
-                <button className="toolicon-btn" style={{ ...styles.toolIconBtn, ...(mode === "draw" ? styles.toolIconBtnActive : null) }}
-                  onClick={() => setMode((m) => m === "draw" ? "select" : "draw")} title="Freehand pen">
-                  <PenLine size={18} strokeWidth={1.75} color={mode === "draw" ? ACCENT : INK_SOFT} />
-                </button>
-                {mode === "draw" && (
-                  <div style={styles.sidebarFlyout} onPointerDown={(e) => e.stopPropagation()}>
-                    <div style={styles.drawColorRow}>
-                      {DRAW_COLORS.map((c) => (
-                        <button key={c} onClick={() => setDrawColor(c)}
-                          style={{ ...styles.drawColorSwatch, background: c, outline: drawColor === c ? `2px solid ${ACCENT}` : `1px solid ${BORDER}` }}
-                          title={c} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div style={{ position: "relative" }}>
-                <button className="toolicon-btn" style={{ ...styles.toolIconBtn, ...(templatesOpen ? styles.toolIconBtnActive : null) }}
-                  onClick={() => setTemplatesOpen((o) => !o)} title="Insert a template">
-                  <LayoutTemplate size={18} strokeWidth={1.75} color={templatesOpen ? ACCENT : INK_SOFT} />
-                </button>
-                {templatesOpen && (
-                  <div style={{ ...styles.sidebarFlyout, ...styles.templatesFlyout }} onPointerDown={(e) => e.stopPropagation()}>
-                    {TEMPLATES.map((tpl) => (
-                      <button key={tpl.id} className="template-flyout-item" style={styles.templateFlyoutItem}
-                        onClick={() => { insertTemplateInView(tpl); setTemplatesOpen(false); }}>
-                        <span style={styles.templateFlyoutName}>{tpl.name}</span>
-                        <span style={styles.templateFlyoutDesc}>{tpl.description}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-
         {/* ════════ BOARD AREA (zoom + pan layer) ════════ */}
         <div style={styles.boardArea}>
+          {/* ════════ TOOL PILL — floating, vertically-centered; see ToolPill.jsx ════════ */}
+          <ToolPill
+            readOnly={readOnly}
+            mode={mode}
+            setMode={setMode}
+            onAddShape={addShapeInView}
+            onAddText={addTextInView}
+            onAddFrame={addFrameInView}
+            onAddImageClick={() => imageInputRef.current?.click()}
+            drawColor={drawColor}
+            setDrawColor={setDrawColor}
+            drawColors={DRAW_COLORS}
+            shapesOpen={shapesOpen}
+            setShapesOpen={setShapesOpen}
+            templatesOpen={templatesOpen}
+            setTemplatesOpen={setTemplatesOpen}
+            onInsertTemplate={insertTemplateInView}
+          />
+          <input ref={imageInputRef} type="file" accept="image/*" style={{ display: "none" }}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageAt(f); e.target.value = ""; }} />
           <div
             ref={boardRef}
             style={{ ...styles.board, cursor: cursorStyle }}
@@ -1565,22 +1465,6 @@ const styles = {
 
   // Layout
   mainRow: { display: "flex", flex: 1, minHeight: 0, overflow: "hidden" },
-
-  // Sidebar — Mural-style icon rail: fixed width, icon-only buttons, no
-  // scrollbar. Two portions: a mode row (select/pan, always visible even
-  // for read-only viewers) and a tools column (hidden when !canEdit).
-  sidebar: { width: 52, flexShrink: 0, background: PANEL_BG, borderRight: `1px solid ${BORDER}`, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "10px 8px" },
-  sidebarModeRow: { display: "flex", flexDirection: "column", gap: 4 },
-  sidebarDivider: { width: 28, height: 1, background: BORDER, margin: "4px 0" },
-  toolIconBtn: { width: 36, height: 36, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "transparent", borderRadius: 8, cursor: "pointer" },
-  toolIconBtnActive: { background: ACCENT_SOFT },
-  sidebarFlyout: { position: "absolute", left: "100%", top: 0, marginLeft: 8, background: "#ffffff", border: `1px solid ${BORDER}`, borderRadius: 10, padding: 8, boxShadow: "0 8px 20px rgba(31,41,55,0.15)", zIndex: 25 },
-  drawColorRow: { display: "flex", flexWrap: "wrap", gap: 6, width: 68 },
-  drawColorSwatch: { width: 18, height: 18, borderRadius: "50%", border: "none", cursor: "pointer" },
-  templatesFlyout: { display: "flex", flexDirection: "column", gap: 2, width: 210, padding: 6 },
-  templateFlyoutItem: { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, textAlign: "left", border: "none", background: "transparent", borderRadius: 8, padding: "8px 8px", cursor: "pointer" },
-  templateFlyoutName: { fontSize: 12.5, fontWeight: 700, color: INK },
-  templateFlyoutDesc: { fontSize: 11, color: INK_FAINT, lineHeight: 1.35 },
 
   // Board area
   boardArea: { position: "relative", flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" },

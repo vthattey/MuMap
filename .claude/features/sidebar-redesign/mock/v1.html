@@ -1,0 +1,723 @@
+<title>Tool Panel Concepts</title>
+<style>
+  :root{
+    --font:'Inter',system-ui,sans-serif;
+    --ink:#1f2937;
+    --ink-soft:rgba(31,41,55,0.62);
+    --ink-faint:rgba(31,41,55,0.45);
+    --border:#e5e7eb;
+    --subtle:#f3f4f6;
+    --accent:#4f46e5;
+    --accent-soft:rgba(79,70,229,0.1);
+    --panel-bg:#ffffff;
+    --page-bg:#eef0f4;
+    --danger:#dc2626;
+    --good:#15803d;
+  }
+  *{box-sizing:border-box;}
+  body{background:var(--page-bg);color:var(--ink);font-family:var(--font);margin:0;}
+  .page{max-width:1180px;margin:0 auto;padding:40px 24px 100px;}
+
+  .hero{padding:30px 32px;background:linear-gradient(135deg,#4f46e5,#4338ca);border-radius:16px;color:#fff;margin-bottom:20px;}
+  .hero .eyebrow{font-size:11.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;opacity:0.8;margin-bottom:8px;}
+  .hero h1{font-size:27px;font-weight:800;margin:0 0 10px;letter-spacing:-0.3px;line-height:1.25;}
+  .hero p{font-size:14px;line-height:1.6;margin:0;max-width:800px;opacity:0.94;}
+
+  .jumpnav{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:40px;position:sticky;top:12px;z-index:40;background:rgba(238,240,244,0.9);backdrop-filter:blur(6px);padding:8px;border-radius:12px;}
+  .jumpnav a{font-size:12.5px;font-weight:700;color:var(--accent);background:#fff;border:1px solid var(--border);padding:7px 13px;border-radius:999px;text-decoration:none;white-space:nowrap;}
+  .jumpnav a:hover{background:var(--accent-soft);}
+
+  section{margin-bottom:60px;scroll-margin-top:70px;}
+  .section-eyebrow{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:6px;}
+  .section-title{font-size:21px;font-weight:800;color:var(--ink);margin:0 0 8px;letter-spacing:-0.2px;}
+  .section-desc{font-size:13.5px;line-height:1.65;color:var(--ink-soft);max-width:820px;margin:0 0 22px;}
+
+  .panel{background:var(--panel-bg);border:1px solid var(--border);border-radius:14px;padding:24px;box-shadow:0 1px 2px rgba(31,41,55,0.05);}
+
+  .callout{display:flex;gap:10px;background:#fef2f2;border:1px dashed var(--danger);border-radius:10px;padding:12px 14px;font-size:12.5px;line-height:1.6;color:#7f1d1d;margin-top:16px;}
+  .callout b{color:#450a0a;}
+  .callout-accent{background:var(--accent-soft);border:1px dashed var(--accent);color:#3730a3;}
+  .callout-accent b{color:#312e81;}
+  .callout-good{background:rgba(21,128,61,0.08);border:1px dashed var(--good);color:#14532d;}
+  .callout-good b{color:#052e16;}
+
+  code{background:var(--subtle);border-radius:4px;padding:1px 5px;font-size:11.5px;font-family:ui-monospace,'SF Mono',Consolas,monospace;}
+
+  /* ---------- research cards ---------- */
+  .research-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;}
+  .research-card{background:var(--panel-bg);border:1px solid var(--border);border-radius:12px;padding:18px 18px 16px;}
+  .research-card h3{font-size:14px;font-weight:800;margin:0 0 3px;color:var(--ink);}
+  .research-card .mech{font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.4px;margin-bottom:9px;}
+  .research-card p{font-size:12.5px;line-height:1.65;color:var(--ink-soft);margin:0;}
+
+  /* ---------- rating grid ---------- */
+  .rating-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:16px 0 4px;}
+  .rating-item{background:var(--subtle);border-radius:10px;padding:11px 13px;}
+  .rating-label{font-size:10px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;}
+  .rating-value{font-size:13.5px;font-weight:800;color:var(--ink);}
+  .rating-note{font-size:11.5px;color:var(--ink-soft);margin-top:4px;line-height:1.45;}
+
+  .pick-sentence{font-size:13px;line-height:1.6;color:var(--ink);background:var(--accent-soft);border-radius:10px;padding:12px 15px;margin-top:14px;font-weight:600;}
+  .pick-sentence b{color:var(--accent);}
+
+  /* ---------- checklist ---------- */
+  .checklist{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;}
+  .checklist span{font-size:10.5px;font-weight:700;color:var(--good);background:rgba(21,128,61,0.09);padding:3px 8px;border-radius:999px;}
+
+  .usage-readout{display:inline-block;font-size:12px;color:var(--ink-soft);background:var(--subtle);border-radius:8px;padding:7px 12px;margin-top:12px;}
+  .usage-readout b{color:var(--ink);}
+  .usage-readout.bad{background:rgba(220,38,38,0.1);color:#7f1d1d;}
+  .usage-readout.bad b{color:#7f1d1d;}
+
+  /* ---------- frame (simulated app window) ---------- */
+  .frame-scroll{width:100%;overflow-x:auto;}
+  .frame{min-width:680px;height:650px;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:#fff;box-shadow:0 1px 3px rgba(31,41,55,0.08);display:flex;flex-direction:column;position:relative;}
+  .frame-topbar{height:52px;flex-shrink:0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 16px;font-size:12.5px;}
+  .frame-back{font-size:16px;color:var(--ink-faint);font-weight:700;}
+  .frame-title{font-weight:800;color:var(--ink);font-size:13px;}
+  .frame-sub{color:var(--ink-faint);font-size:11.5px;}
+  .frame-topbar-right{margin-left:auto;display:flex;align-items:center;gap:8px;}
+  .frame-chip{font-size:11px;font-weight:700;color:var(--ink-soft);background:var(--subtle);padding:5px 10px;border-radius:999px;}
+  .frame-share{font-size:11.5px;font-weight:700;color:#fff;background:var(--accent);padding:6px 12px;border-radius:999px;}
+  .frame-main{flex:1;display:flex;min-height:0;overflow:hidden;position:relative;}
+  .frame-canvas{flex:1;position:relative;background:
+      repeating-linear-gradient(0deg,transparent,transparent 27px,rgba(31,41,55,0.035) 27px,rgba(31,41,55,0.035) 28px),
+      repeating-linear-gradient(90deg,transparent,transparent 27px,rgba(31,41,55,0.035) 27px,rgba(31,41,55,0.035) 28px);
+      overflow:hidden;}
+  .canvas-label{position:absolute;top:14px;left:16px;font-size:11px;color:var(--ink-faint);font-weight:600;}
+  .canvas-tile{position:absolute;background:#fff;border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:12px;font-weight:700;color:var(--ink);box-shadow:0 1px 2px rgba(31,41,55,0.08);width:150px;}
+  .canvas-tile span{display:block;font-size:10.5px;font-weight:600;color:var(--ink-faint);margin-top:3px;}
+
+  /* ---------- icon ---------- */
+  .icon{width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .icon svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;}
+  .icon-fill svg{fill:currentColor;stroke:none;}
+
+  /* ---------- rail (concepts A & C) ---------- */
+  .rail{width:52px;flex-shrink:0;background:var(--panel-bg);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 8px;position:relative;}
+  .rail-mode-row{display:flex;flex-direction:column;gap:4px;}
+  .rail-divider{width:28px;height:1px;background:var(--border);margin:4px 0;flex-shrink:0;}
+  .rail-spacer{flex:1 1 auto;width:100%;}
+  .rail-btn{width:36px;height:36px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:none;background:transparent;border-radius:8px;cursor:pointer;color:var(--ink-soft);position:relative;transition:background .12s,color .12s;padding:0;}
+  .rail-btn:hover{background:var(--subtle);}
+  .rail-btn.active,.rail-btn.flyout-active,.rail-btn.flash{background:var(--accent-soft);color:var(--accent);}
+  .rail-wrap{position:relative;}
+  .corner-flag{position:absolute;bottom:3px;right:3px;width:0;height:0;border-style:solid;border-width:0 0 6px 6px;border-color:transparent transparent var(--ink-faint) transparent;pointer-events:none;}
+  .rail-btn.active .corner-flag,.rail-btn.flyout-active .corner-flag{border-color:transparent transparent var(--accent) transparent;}
+
+  /* ---------- flyouts (shared) ---------- */
+  .flyout{position:absolute;left:calc(100% + 8px);top:0;display:none;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 20px rgba(31,41,55,0.16);z-index:50;}
+  .flyout.open{display:flex;}
+
+  .family-flyout{flex-direction:row;gap:4px;padding:8px;}
+  .family-item{display:flex;flex-direction:column;align-items:center;gap:5px;width:56px;padding:8px 4px 6px;border-radius:8px;cursor:pointer;color:var(--ink-soft);background:transparent;border:none;font-family:var(--font);}
+  .family-item:hover{background:var(--subtle);color:var(--ink);}
+  .family-item span{font-size:9.5px;font-weight:700;text-align:center;line-height:1.2;}
+
+  .color-flyout{flex-direction:row;flex-wrap:wrap;gap:6px;width:76px;padding:9px;}
+  .color-swatch{width:18px;height:18px;border-radius:50%;border:1px solid var(--border);cursor:pointer;padding:0;}
+
+  .tpl-flyout{flex-direction:column;gap:1px;width:216px;padding:6px;}
+  .tpl-item{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;border:none;background:transparent;border-radius:8px;padding:8px 9px;cursor:pointer;font-family:var(--font);}
+  .tpl-item:hover{background:var(--subtle);}
+  .tpl-name{font-size:12.5px;font-weight:700;color:var(--ink);}
+  .tpl-desc{font-size:11px;color:var(--ink-faint);line-height:1.35;}
+
+  .grid-flyout{flex-direction:column;width:196px;padding:10px;}
+  .grid-flyout-title{font-size:10.5px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;padding:0 2px;}
+  .shape-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;}
+  .grid-cell{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:9px 4px;border-radius:8px;cursor:pointer;border:none;background:transparent;color:var(--ink-soft);font-family:var(--font);}
+  .grid-cell:hover{background:var(--subtle);color:var(--ink);}
+  .grid-cell.selected{background:var(--accent-soft);color:var(--accent);}
+  .grid-cell span{font-size:9px;font-weight:700;text-align:center;line-height:1.15;}
+  .grid-cell.ghost{border:1.5px dashed var(--border);color:var(--ink-faint);cursor:default;}
+  .grid-cell.ghost:hover{background:transparent;color:var(--ink-faint);}
+
+  .menu-flyout{flex-direction:column;gap:1px;width:210px;padding:6px;}
+  .menu-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;border:none;background:transparent;cursor:pointer;text-align:left;color:var(--ink);font-size:12.5px;font-weight:700;font-family:var(--font);width:100%;}
+  .menu-item:hover{background:var(--subtle);}
+  .menu-item.selected{background:var(--accent-soft);color:var(--accent);}
+  .menu-item .icon{color:var(--ink-soft);}
+  .menu-item.selected .icon{color:var(--accent);}
+
+  /* ---------- pill (concept B) ---------- */
+  .pill{position:absolute;left:16px;top:50%;transform:translateY(-50%);background:var(--panel-bg);border:1px solid var(--border);border-radius:26px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;gap:4px;box-shadow:0 10px 26px rgba(31,41,55,0.16);z-index:10;}
+
+  /* ---------- switch ---------- */
+  .switch{display:inline-flex;align-items:center;gap:10px;cursor:pointer;font-size:12.5px;font-weight:700;color:var(--ink);user-select:none;}
+  .switch input{display:none;}
+  .switch-track{width:36px;height:20px;background:var(--border);border-radius:999px;position:relative;transition:background .15s;flex-shrink:0;}
+  .switch input:checked ~ .switch-track{background:var(--accent);}
+  .switch-thumb{position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:left .15s;box-shadow:0 1px 2px rgba(0,0,0,0.25);}
+  .switch input:checked ~ .switch-track .switch-thumb{left:18px;}
+
+  /* ---------- comparison table ---------- */
+  .table-scroll{width:100%;overflow-x:auto;}
+  table.compare{width:100%;border-collapse:collapse;min-width:760px;background:#fff;border-radius:12px;overflow:hidden;border:1px solid var(--border);}
+  table.compare th,table.compare td{padding:12px 14px;text-align:left;font-size:12.5px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.5;}
+  table.compare th{background:var(--subtle);font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--ink-faint);font-weight:700;}
+  table.compare td:first-child,table.compare th:first-child{font-weight:700;color:var(--ink);white-space:nowrap;}
+  table.compare tr:last-child td{border-bottom:none;}
+
+  .concept-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px;}
+  .concept-name{font-size:19px;font-weight:800;color:var(--ink);}
+  .concept-inspired{font-size:11.5px;font-weight:700;color:var(--accent);background:var(--accent-soft);padding:4px 10px;border-radius:999px;}
+</style>
+
+<div class="page">
+
+  <header class="hero">
+    <div class="eyebrow">Design exploration &mdash; not for implementation</div>
+    <h1>The left tool panel has run out of room. Here are three structurally different ways to fix that &mdash; not just a taller sidebar.</h1>
+    <p>MuMap's tool rail started as 3 shapes and is now 14 icons stacked in one column. At a perfectly ordinary 1400&times;700 window, the rail's own content is 505px tall &mdash; taller than the space it's given &mdash; and because <code style="background:rgba(255,255,255,0.18);color:#fff;">mainRow</code> clips overflow with no scroll region on the sidebar, Pen and Templates render past the edge and are simply gone. No scrollbar, no fix, no way to reach them. This page researches how four established tools solve "many icons, fixed space, still growing," then builds three real, clickable alternatives in MuMap's own visual language. Pick a direction; nothing here gets built until you do.</p>
+  </header>
+
+  <nav class="jumpnav">
+    <a href="#problem">The problem, live</a>
+    <a href="#research">Research</a>
+    <a href="#concept-a">A &mdash; Grouped Rail</a>
+    <a href="#concept-b">B &mdash; Floating Pill + Grid</a>
+    <a href="#concept-c">C &mdash; Fixed Rail + Overflow</a>
+    <a href="#compare">Comparison</a>
+  </nav>
+
+  <!-- ═══════════════════════════ PROBLEM ═══════════════════════════ -->
+  <section id="problem">
+    <div class="section-eyebrow">01 &middot; Confirmed bug, reproduced</div>
+    <h2 class="section-title">Two separate bugs, same root cause: nothing in the sidebar is viewport-aware</h2>
+    <p class="section-desc">Bug 1: the rail has no ceiling on its own height and no scroll region, so it silently clips. Bug 2: flyouts (Pen's colors, Templates' list) are positioned <code>left: 100%; top: 0</code> relative to their trigger with zero awareness of the viewport edge, so a trigger near the bottom of a short window pops its flyout off-screen too. Both are reproduced below, exactly as they behave today.</p>
+
+    <div class="panel">
+      <div style="display:flex;gap:28px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:260px;">
+          <div style="font-size:13px;font-weight:800;margin-bottom:8px;">Bug 1 &mdash; the rail clips with no scrollbar</div>
+          <p style="font-size:12px;color:var(--ink-soft);line-height:1.6;margin:0 0 12px;">Today's rail, all 14 icons, in the space actually available once you subtract MuMap's real page chrome. This box is shrunk from the field-measured 505px-vs-available gap purely so the clip is visible without you resizing your own browser &mdash; the mechanism is identical.</p>
+          <div style="position:relative;width:64px;height:360px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:#fff;">
+            <div class="rail" id="problem-rail" style="border-right:none;width:64px;height:auto;position:absolute;top:0;left:0;">
+              <div class="rail-mode-row">
+                <button class="rail-btn active"><span class="icon" data-icon="select"></span></button>
+                <button class="rail-btn"><span class="icon" data-icon="pan"></span></button>
+              </div>
+              <div class="rail-divider"></div>
+              <button class="rail-btn"><span class="icon" data-icon="square"></span></button>
+              <button class="rail-btn"><span class="icon" data-icon="rectangle"></span></button>
+              <button class="rail-btn"><span class="icon" data-icon="circle"></span></button>
+              <button class="rail-btn"><span class="icon" data-icon="terminator"></span></button>
+              <button class="rail-btn"><span class="icon" data-icon="process"></span></button>
+              <button class="rail-btn"><span class="icon" data-icon="decision"></span></button>
+              <button class="rail-btn"><span class="icon" data-icon="io"></span></button>
+              <button class="rail-btn"><span class="icon" data-icon="text"></span></button>
+              <button class="rail-btn"><span class="icon" data-icon="frame"></span></button>
+              <button class="rail-btn"><span class="icon" data-icon="image"></span></button>
+              <div class="rail-divider"></div>
+              <button class="rail-btn" style="opacity:.35;"><span class="icon" data-icon="pen"></span></button>
+              <button class="rail-btn" style="opacity:.15;"><span class="icon" data-icon="templates"></span></button>
+            </div>
+            <div id="problem-avail" style="position:absolute;inset:0;pointer-events:none;"></div>
+            <div style="position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--danger);"></div>
+            <div style="position:absolute;left:70px;bottom:-6px;font-size:10.5px;font-weight:700;color:var(--danger);white-space:nowrap;">&larr; visible area ends here</div>
+          </div>
+          <div class="usage-readout bad" id="problem-usage">measuring&hellip;</div>
+        </div>
+
+        <div style="flex:1;min-width:280px;">
+          <div style="font-size:13px;font-weight:800;margin-bottom:8px;">Bug 2 &mdash; flyouts don't know where the viewport ends</div>
+          <p style="font-size:12px;color:var(--ink-soft);line-height:1.6;margin:0 0 12px;">A Templates-style trigger pinned near the bottom of a short window. Toggle the switch to see today's code (<code>top:0</code>, no clamp) versus the clamped fix every concept below uses.</p>
+          <label class="switch" style="margin-bottom:10px;">
+            <input type="checkbox" id="fix-toggle" checked onchange="toggleFixDemo()">
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+            <span id="fix-toggle-label">Fixed positioning (clamped)</span>
+          </label>
+          <div id="bug-demo-frame" style="position:relative;width:100%;max-width:320px;height:220px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:
+              repeating-linear-gradient(0deg,transparent,transparent 20px,rgba(31,41,55,0.035) 20px,rgba(31,41,55,0.035) 21px),
+              repeating-linear-gradient(90deg,transparent,transparent 20px,rgba(31,41,55,0.035) 20px,rgba(31,41,55,0.035) 21px);">
+            <div class="rail-wrap" data-flyout-wrap style="position:absolute;left:12px;bottom:12px;">
+              <button class="rail-btn" style="background:#fff;border:1px solid var(--border);" onclick="toggleBugDemoFlyout(this)">
+                <span class="icon" data-icon="templates"></span>
+              </button>
+              <div class="flyout tpl-flyout">
+                <button class="tpl-item"><span class="tpl-name">Story Map</span><span class="tpl-desc">A backbone of user journeys with supporting stories underneath each step.</span></button>
+                <button class="tpl-item"><span class="tpl-name">Retro</span><span class="tpl-desc">Start / Stop / Continue &mdash; a classic team retrospective layout.</span></button>
+                <button class="tpl-item"><span class="tpl-name">Dependency Map</span><span class="tpl-desc">A chain of work items with directed dependency arrows already drawn.</span></button>
+                <button class="tpl-item"><span class="tpl-name">Flowchart</span><span class="tpl-desc">Start &rarr; process &rarr; decision &rarr; branches &rarr; end, ready to customize.</span></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout">
+        <span>&#9888;</span>
+        <span><b>Root cause, not just symptom:</b> the sidebar's parent row (<code>mainRow</code>) is <code>display:flex; overflow:hidden</code> with no scroll region ever set on the sidebar itself. Overflowing icons aren't "below the fold" in the scrollable sense &mdash; they're clipped out of the layout entirely, and no amount of resizing the window past a moderate height brings them back. Every concept below is designed so its content height is <i>structurally</i> bounded well under a short viewport, not just padded with a bit more margin.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ RESEARCH ═══════════════════════════ -->
+  <section id="research">
+    <div class="section-eyebrow">02 &middot; Research</div>
+    <h2 class="section-title">How four tools actually solve this &mdash; the mechanism, not just the name</h2>
+    <p class="section-desc">Each concept below is adapted from one or more of these, translated into MuMap's own rounded/indigo/Inter visual language rather than copied wholesale.</p>
+    <div class="research-grid">
+      <div class="research-card">
+        <h3>Figma</h3>
+        <div class="mech">Icon+chevron family groups, sticky last-used face</div>
+        <p>The toolbar's top-level count stays around 8 even though the editor has far more than 8 drawing tools. A slot like "Rectangle" shows a small chevron; click-and-hold opens a flyout row of siblings (ellipse, line, arrow, polygon, star). Whichever sibling you pick becomes the new visible face of that slot until you pick another &mdash; the slot remembers your last choice, it doesn't reset to a family default. New tools join an existing family for free; the toolbar itself doesn't grow.</p>
+      </div>
+      <div class="research-card">
+        <h3>Miro / FigJam</h3>
+        <div class="mech">Floating pill, 2D grid popovers</div>
+        <p>The toolbar is a rounded pill that <i>floats</i> over the canvas, vertically centered on the left edge &mdash; not pinned edge-to-edge top-to-bottom. Its height is a design decision, not a function of content. A curated ~8 icons cover the common actions; icons like the shape picker or the app drawer open a compact grid popover (several items per row) instead of a tall list, so ten more shape variants cost zero pill height &mdash; they just make one popover slightly denser.</p>
+      </div>
+      <div class="research-card">
+        <h3>VS Code</h3>
+        <div class="mech">Fixed Activity Bar + explicit "&hellip;" overflow</div>
+        <p>The Activity Bar is a fixed-width column with a hard-curated top-level icon set. Anything that doesn't fit &mdash; extra view containers from installed extensions, for example &mdash; collapses into an explicit "&hellip;" affordance rather than being silently pushed off-screen or requiring a scrollbar nobody notices. The top-level count is a deliberate ceiling the designer chose, not "however many happen to fit today."</p>
+      </div>
+      <div class="research-card">
+        <h3>Photoshop / Illustrator</h3>
+        <div class="mech">One visible slot per family, corner-flag flyout</div>
+        <p>Each toolbar slot shows one tool, but a small filled triangle in its bottom-right corner signals "more tools live here." Click-and-hold pops a flyout of sibling tools in that family; picking one swaps the visible face of the slot &mdash; the same mechanic Figma later adapted for the web, predating it by decades. It's the direct ancestor of Concept A below.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ CONCEPT A ═══════════════════════════ -->
+  <section id="concept-a">
+    <div class="section-eyebrow">03 &middot; Concept A</div>
+    <div class="concept-head">
+      <span class="concept-name">Grouped Rail</span>
+      <span class="concept-inspired">Inspired by Figma + Illustrator/Photoshop</span>
+    </div>
+    <p class="section-desc">Same vertical rail metaphor MuMap already has. Related tools are folded into one slot with a small corner flag; click it to reveal the family, and whichever sibling you pick becomes that slot's new face. 14 tools collapse to 9 top-level slots today, with room to spare.</p>
+
+    <div class="panel">
+      <div class="frame-scroll"><div class="frame">
+        <div class="frame-topbar">
+          <span class="frame-back">&lsaquo;</span>
+          <span class="frame-title">Sprint 14 Retro</span>
+          <span class="frame-sub">Working session</span>
+          <div class="frame-topbar-right"><span class="frame-chip">100%</span><span class="frame-share">Share</span></div>
+        </div>
+        <div class="frame-main" id="a-main">
+          <div class="rail" id="a-rail">
+            <div class="rail-mode-row mode-row">
+              <button class="rail-btn active" onclick="setMode(this,'.mode-row')" title="Select"><span class="icon" data-icon="select"></span></button>
+              <button class="rail-btn" onclick="setMode(this,'.mode-row')" title="Pan"><span class="icon" data-icon="pan"></span></button>
+            </div>
+            <div class="rail-divider"></div>
+
+            <div class="rail-wrap" data-flyout-wrap>
+              <button class="rail-btn" id="a-shapes-btn" data-icon="square" title="Shapes (Square, Rectangle, Circle)" onclick="toggleFlyout(this)">
+                <span class="icon" data-icon="square"></span>
+                <span class="corner-flag"></span>
+              </button>
+              <div class="flyout family-flyout">
+                <button class="family-item" onclick="swapFamilyFace(document.getElementById('a-shapes-btn'),'square','Add square'); flashActive(document.getElementById('a-shapes-btn'))"><span class="icon" data-icon="square"></span><span>Square</span></button>
+                <button class="family-item" onclick="swapFamilyFace(document.getElementById('a-shapes-btn'),'rectangle','Add rectangle'); flashActive(document.getElementById('a-shapes-btn'))"><span class="icon" data-icon="rectangle"></span><span>Rectangle</span></button>
+                <button class="family-item" onclick="swapFamilyFace(document.getElementById('a-shapes-btn'),'circle','Add circle'); flashActive(document.getElementById('a-shapes-btn'))"><span class="icon" data-icon="circle"></span><span>Circle</span></button>
+              </div>
+            </div>
+
+            <div class="rail-wrap" data-flyout-wrap>
+              <button class="rail-btn" id="a-flow-btn" data-icon="terminator" title="Flowchart shapes" onclick="toggleFlyout(this)">
+                <span class="icon" data-icon="terminator"></span>
+                <span class="corner-flag"></span>
+              </button>
+              <div class="flyout family-flyout">
+                <button class="family-item" onclick="swapFamilyFace(document.getElementById('a-flow-btn'),'terminator','Add terminator'); flashActive(document.getElementById('a-flow-btn'))"><span class="icon" data-icon="terminator"></span><span>Terminator</span></button>
+                <button class="family-item" onclick="swapFamilyFace(document.getElementById('a-flow-btn'),'process','Add process'); flashActive(document.getElementById('a-flow-btn'))"><span class="icon" data-icon="process"></span><span>Process</span></button>
+                <button class="family-item" onclick="swapFamilyFace(document.getElementById('a-flow-btn'),'decision','Add decision'); flashActive(document.getElementById('a-flow-btn'))"><span class="icon" data-icon="decision"></span><span>Decision</span></button>
+                <button class="family-item" onclick="swapFamilyFace(document.getElementById('a-flow-btn'),'io','Add input/output'); flashActive(document.getElementById('a-flow-btn'))"><span class="icon" data-icon="io"></span><span>Input/Output</span></button>
+              </div>
+            </div>
+
+            <button class="rail-btn" title="Add text" onclick="flashActive(this)"><span class="icon" data-icon="text"></span></button>
+            <button class="rail-btn" title="Add a frame" onclick="flashActive(this)"><span class="icon" data-icon="frame"></span></button>
+            <button class="rail-btn" title="Add an image or GIF" onclick="flashActive(this)"><span class="icon" data-icon="image"></span></button>
+            <div class="rail-divider"></div>
+
+            <div class="rail-wrap" data-flyout-wrap>
+              <button class="rail-btn" title="Freehand pen" onclick="toggleFlyout(this)"><span class="icon" data-icon="pen"></span></button>
+              <div class="flyout color-flyout">
+                <button class="color-swatch" style="background:#1f2937;outline:2px solid var(--accent);" onclick="pickColor(this)"></button>
+                <button class="color-swatch" style="background:#dc2626;" onclick="pickColor(this)"></button>
+                <button class="color-swatch" style="background:#2563eb;" onclick="pickColor(this)"></button>
+                <button class="color-swatch" style="background:#16a34a;" onclick="pickColor(this)"></button>
+                <button class="color-swatch" style="background:#f59e0b;" onclick="pickColor(this)"></button>
+              </div>
+            </div>
+
+            <div class="rail-wrap" data-flyout-wrap>
+              <button class="rail-btn" title="Insert a template" onclick="toggleFlyout(this)"><span class="icon" data-icon="templates"></span></button>
+              <div class="flyout tpl-flyout">
+                <button class="tpl-item"><span class="tpl-name">Story Map</span><span class="tpl-desc">A backbone of user journeys with supporting stories underneath each step.</span></button>
+                <button class="tpl-item"><span class="tpl-name">Retro</span><span class="tpl-desc">Start / Stop / Continue &mdash; a classic team retrospective layout.</span></button>
+                <button class="tpl-item"><span class="tpl-name">Dependency Map</span><span class="tpl-desc">A chain of work items with directed dependency arrows already drawn.</span></button>
+                <button class="tpl-item"><span class="tpl-name">Flowchart</span><span class="tpl-desc">Start &rarr; process &rarr; decision &rarr; branches &rarr; end, ready to customize.</span></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="frame-canvas">
+            <span class="canvas-label">Board canvas</span>
+            <div class="canvas-tile" style="left:120px;top:90px;border-top:3px solid #4f46e5;">Sprint goal<span>Ship the grouped rail concept</span></div>
+            <div class="canvas-tile" style="left:340px;top:220px;border-top:3px solid #f59e0b;">Blocked: API keys<span>Waiting on infra</span></div>
+          </div>
+        </div>
+      </div></div>
+      <div class="usage-readout" id="a-usage">measuring&hellip;</div>
+
+      <div class="rating-grid">
+        <div class="rating-item"><div class="rating-label">Implementation cost</div><div class="rating-value">Low</div><div class="rating-note">Reuses the existing flyout pattern for two new "family" slots plus a small last-used-face state. No new layout system.</div></div>
+        <div class="rating-item"><div class="rating-label">Discoverability</div><div class="rating-value">Medium</div><div class="rating-note">The corner flag is a learned convention &mdash; new users may not realize Square is hiding Rectangle and Circle without a tooltip nudge.</div></div>
+        <div class="rating-item"><div class="rating-label">Scales past 20+ tools</div><div class="rating-value">Medium</div><div class="rating-note">Tools that fit an existing family are free. A genuinely new category still costs one more permanent top-level slot.</div></div>
+        <div class="rating-item"><div class="rating-label">Interaction-model change</div><div class="rating-value">Low</div><div class="rating-note">Still a pinned vertical rail, still single-click to place the visible face of a slot &mdash; closest to how MuMap already works.</div></div>
+      </div>
+      <div class="checklist">
+        <span>&#10003; Select</span><span>&#10003; Pan</span><span>&#10003; Square</span><span>&#10003; Rectangle</span><span>&#10003; Circle</span><span>&#10003; Terminator</span><span>&#10003; Process</span><span>&#10003; Decision</span><span>&#10003; Input/Output</span><span>&#10003; Text</span><span>&#10003; Frame</span><span>&#10003; Image</span><span>&#10003; Pen</span><span>&#10003; Templates</span><span style="background:rgba(79,70,229,0.12);color:var(--accent);">14/14 present &middot; 0 clipped &middot; 0 scrollbars</span>
+      </div>
+      <div class="pick-sentence">Pick this when you want <b>the smallest possible change</b> to today's rail and interaction model while still buying real headroom for tools that are natural siblings of what already exists.</div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ CONCEPT B ═══════════════════════════ -->
+  <section id="concept-b">
+    <div class="section-eyebrow">04 &middot; Concept B</div>
+    <div class="concept-head">
+      <span class="concept-name">Floating Pill + Grid</span>
+      <span class="concept-inspired">Inspired by Miro / FigJam</span>
+    </div>
+    <p class="section-desc">The rail detaches from the page edge and becomes a floating, vertically-centered pill &mdash; its height is a design choice, not a function of tool count. All 7 shapes live in one grid popover behind a single "Shapes" launcher, so the pill itself never grows again even as shapes do. (Unlike Concept A, the launcher icon stays generic &mdash; it doesn't adopt whatever you last picked.)</p>
+
+    <div class="panel">
+      <div class="frame-scroll"><div class="frame">
+        <div class="frame-topbar">
+          <span class="frame-back">&lsaquo;</span>
+          <span class="frame-title">Sprint 14 Retro</span>
+          <span class="frame-sub">Working session</span>
+          <div class="frame-topbar-right"><span class="frame-chip">100%</span><span class="frame-share">Share</span></div>
+        </div>
+        <div class="frame-main" id="b-main">
+          <div class="frame-canvas">
+            <span class="canvas-label">Board canvas</span>
+            <div class="canvas-tile" style="left:190px;top:80px;border-top:3px solid #4f46e5;">Sprint goal<span>Ship the floating pill concept</span></div>
+            <div class="canvas-tile" style="left:410px;top:250px;border-top:3px solid #f59e0b;">Blocked: API keys<span>Waiting on infra</span></div>
+
+            <div class="pill" id="b-pill">
+              <div class="rail-mode-row mode-row-b">
+                <button class="rail-btn active" onclick="setMode(this,'.mode-row-b')" title="Select"><span class="icon" data-icon="select"></span></button>
+                <button class="rail-btn" onclick="setMode(this,'.mode-row-b')" title="Pan"><span class="icon" data-icon="pan"></span></button>
+              </div>
+              <div class="rail-divider"></div>
+
+              <div class="rail-wrap" data-flyout-wrap>
+                <button class="rail-btn" title="Shapes" onclick="toggleFlyout(this)"><span class="icon" data-icon="square"></span></button>
+                <div class="flyout grid-flyout">
+                  <div class="grid-flyout-title">Shapes</div>
+                  <div class="shape-grid">
+                    <button class="grid-cell" onclick="selectGridCell(this)"><span class="icon" data-icon="square"></span><span>Square</span></button>
+                    <button class="grid-cell" onclick="selectGridCell(this)"><span class="icon" data-icon="rectangle"></span><span>Rectangle</span></button>
+                    <button class="grid-cell" onclick="selectGridCell(this)"><span class="icon" data-icon="circle"></span><span>Circle</span></button>
+                    <button class="grid-cell" onclick="selectGridCell(this)"><span class="icon" data-icon="terminator"></span><span>Terminator</span></button>
+                    <button class="grid-cell" onclick="selectGridCell(this)"><span class="icon" data-icon="process"></span><span>Process</span></button>
+                    <button class="grid-cell" onclick="selectGridCell(this)"><span class="icon" data-icon="decision"></span><span>Decision</span></button>
+                    <button class="grid-cell" onclick="selectGridCell(this)"><span class="icon" data-icon="io"></span><span>Input/Output</span></button>
+                    <button class="grid-cell ghost"><span class="icon" data-icon="plus"></span><span>Future</span></button>
+                    <button class="grid-cell ghost"><span class="icon" data-icon="plus"></span><span>Future</span></button>
+                  </div>
+                </div>
+              </div>
+
+              <button class="rail-btn" title="Add text" onclick="flashActive(this)"><span class="icon" data-icon="text"></span></button>
+              <button class="rail-btn" title="Add a frame" onclick="flashActive(this)"><span class="icon" data-icon="frame"></span></button>
+              <button class="rail-btn" title="Add an image or GIF" onclick="flashActive(this)"><span class="icon" data-icon="image"></span></button>
+              <div class="rail-divider"></div>
+
+              <div class="rail-wrap" data-flyout-wrap>
+                <button class="rail-btn" title="Freehand pen" onclick="toggleFlyout(this)"><span class="icon" data-icon="pen"></span></button>
+                <div class="flyout color-flyout">
+                  <button class="color-swatch" style="background:#1f2937;outline:2px solid var(--accent);" onclick="pickColor(this)"></button>
+                  <button class="color-swatch" style="background:#dc2626;" onclick="pickColor(this)"></button>
+                  <button class="color-swatch" style="background:#2563eb;" onclick="pickColor(this)"></button>
+                  <button class="color-swatch" style="background:#16a34a;" onclick="pickColor(this)"></button>
+                  <button class="color-swatch" style="background:#f59e0b;" onclick="pickColor(this)"></button>
+                </div>
+              </div>
+
+              <div class="rail-wrap" data-flyout-wrap>
+                <button class="rail-btn" title="Insert a template" onclick="toggleFlyout(this)"><span class="icon" data-icon="templates"></span></button>
+                <div class="flyout tpl-flyout">
+                  <button class="tpl-item"><span class="tpl-name">Story Map</span><span class="tpl-desc">A backbone of user journeys with supporting stories underneath each step.</span></button>
+                  <button class="tpl-item"><span class="tpl-name">Retro</span><span class="tpl-desc">Start / Stop / Continue &mdash; a classic team retrospective layout.</span></button>
+                  <button class="tpl-item"><span class="tpl-name">Dependency Map</span><span class="tpl-desc">A chain of work items with directed dependency arrows already drawn.</span></button>
+                  <button class="tpl-item"><span class="tpl-name">Flowchart</span><span class="tpl-desc">Start &rarr; process &rarr; decision &rarr; branches &rarr; end, ready to customize.</span></button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="usage-readout" id="b-usage">measuring&hellip;</div>
+
+      <div class="rating-grid">
+        <div class="rating-item"><div class="rating-label">Implementation cost</div><div class="rating-value">Medium&ndash;High</div><div class="rating-note">A floating layout decoupled from document flow, a new grid-popover component, and z-index/pan-canvas interplay to work through.</div></div>
+        <div class="rating-item"><div class="rating-label">Discoverability</div><div class="rating-value">Medium</div><div class="rating-note">The curated top-level is very clean, but shape variety now needs one popover-open to learn it exists at all.</div></div>
+        <div class="rating-item"><div class="rating-label">Scales past 20+ tools</div><div class="rating-value">High</div><div class="rating-note">The grid absorbs growth in two dimensions; the pill's own height is fully decoupled from total tool count.</div></div>
+        <div class="rating-item"><div class="rating-label">Interaction-model change</div><div class="rating-value">High</div><div class="rating-note">Biggest departure &mdash; the sidebar becomes a floating overlay instead of a pinned column, which changes how the canvas edge reads on day one.</div></div>
+      </div>
+      <div class="checklist">
+        <span>&#10003; Select</span><span>&#10003; Pan</span><span>&#10003; Square</span><span>&#10003; Rectangle</span><span>&#10003; Circle</span><span>&#10003; Terminator</span><span>&#10003; Process</span><span>&#10003; Decision</span><span>&#10003; Input/Output</span><span>&#10003; Text</span><span>&#10003; Frame</span><span>&#10003; Image</span><span>&#10003; Pen</span><span>&#10003; Templates</span><span style="background:rgba(79,70,229,0.12);color:var(--accent);">14/14 present &middot; 0 clipped &middot; 0 scrollbars</span>
+      </div>
+      <div class="pick-sentence">Pick this when you're confident the tool count keeps growing for years and you're willing to spend more implementation effort now for a panel whose height <b>never again depends on tool count</b>.</div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ CONCEPT C ═══════════════════════════ -->
+  <section id="concept-c">
+    <div class="section-eyebrow">05 &middot; Concept C</div>
+    <div class="concept-head">
+      <span class="concept-name">Fixed Rail + Overflow</span>
+      <span class="concept-inspired">Inspired by VS Code's Activity Bar</span>
+    </div>
+    <p class="section-desc">The rail stays exactly where it is today, but the top-level list is hard-capped at the 8 most-reached-for tools. A "More" button is pinned to the very bottom of the rail &mdash; via a flex spacer, not absolute positioning &mdash; so it is always at a fixed, reachable spot regardless of viewport height. Everything that doesn't fit opens in a labeled overflow menu instead of vanishing.</p>
+
+    <div class="panel">
+      <div class="frame-scroll"><div class="frame">
+        <div class="frame-topbar">
+          <span class="frame-back">&lsaquo;</span>
+          <span class="frame-title">Sprint 14 Retro</span>
+          <span class="frame-sub">Working session</span>
+          <div class="frame-topbar-right"><span class="frame-chip">100%</span><span class="frame-share">Share</span></div>
+        </div>
+        <div class="frame-main" id="c-main">
+          <div class="rail" id="c-rail">
+            <div class="rail-mode-row mode-row-c">
+              <button class="rail-btn active" onclick="setMode(this,'.mode-row-c')" title="Select"><span class="icon" data-icon="select"></span></button>
+              <button class="rail-btn" onclick="setMode(this,'.mode-row-c')" title="Pan"><span class="icon" data-icon="pan"></span></button>
+            </div>
+            <div class="rail-divider"></div>
+            <button class="rail-btn" title="Add square" onclick="flashActive(this)"><span class="icon" data-icon="square"></span></button>
+            <button class="rail-btn" title="Add rectangle" onclick="flashActive(this)"><span class="icon" data-icon="rectangle"></span></button>
+            <button class="rail-btn" title="Add circle" onclick="flashActive(this)"><span class="icon" data-icon="circle"></span></button>
+            <button class="rail-btn" title="Add text" onclick="flashActive(this)"><span class="icon" data-icon="text"></span></button>
+            <button class="rail-btn" title="Add a frame" onclick="flashActive(this)"><span class="icon" data-icon="frame"></span></button>
+            <div class="rail-divider"></div>
+
+            <div class="rail-wrap" data-flyout-wrap>
+              <button class="rail-btn" title="Freehand pen" onclick="toggleFlyout(this)"><span class="icon" data-icon="pen"></span></button>
+              <div class="flyout color-flyout">
+                <button class="color-swatch" style="background:#1f2937;outline:2px solid var(--accent);" onclick="pickColor(this)"></button>
+                <button class="color-swatch" style="background:#dc2626;" onclick="pickColor(this)"></button>
+                <button class="color-swatch" style="background:#2563eb;" onclick="pickColor(this)"></button>
+                <button class="color-swatch" style="background:#16a34a;" onclick="pickColor(this)"></button>
+                <button class="color-swatch" style="background:#f59e0b;" onclick="pickColor(this)"></button>
+              </div>
+            </div>
+
+            <div class="rail-spacer"></div>
+
+            <div class="rail-wrap" data-flyout-wrap>
+              <button class="rail-btn" title="More tools" onclick="toggleFlyout(this)"><span class="icon" data-icon="more"></span></button>
+              <div class="flyout menu-flyout">
+                <button class="menu-item" onclick="selectMoreItem(this)"><span class="icon" data-icon="terminator"></span>Terminator</button>
+                <button class="menu-item" onclick="selectMoreItem(this)"><span class="icon" data-icon="process"></span>Process</button>
+                <button class="menu-item" onclick="selectMoreItem(this)"><span class="icon" data-icon="decision"></span>Decision</button>
+                <button class="menu-item" onclick="selectMoreItem(this)"><span class="icon" data-icon="io"></span>Input/Output</button>
+                <button class="menu-item" onclick="selectMoreItem(this)"><span class="icon" data-icon="image"></span>Image / GIF</button>
+                <button class="menu-item" onclick="selectMoreItem(this)"><span class="icon" data-icon="templates"></span>Templates</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="frame-canvas">
+            <span class="canvas-label">Board canvas</span>
+            <div class="canvas-tile" style="left:130px;top:100px;border-top:3px solid #4f46e5;">Sprint goal<span>Ship the overflow-menu concept</span></div>
+            <div class="canvas-tile" style="left:360px;top:260px;border-top:3px solid #f59e0b;">Blocked: API keys<span>Waiting on infra</span></div>
+          </div>
+        </div>
+      </div></div>
+      <div class="usage-readout" id="c-usage">measuring&hellip;</div>
+
+      <div class="rating-grid">
+        <div class="rating-item"><div class="rating-label">Implementation cost</div><div class="rating-value">Low</div><div class="rating-note">A fixed slice of the current list plus one new list-style menu component &mdash; the smallest amount of genuinely new code of the three.</div></div>
+        <div class="rating-item"><div class="rating-label">Discoverability</div><div class="rating-value">High top / Low buried</div><div class="rating-note">The 8 curated tools keep today's muscle memory exactly. Anything in More is invisible until a user opens it once.</div></div>
+        <div class="rating-item"><div class="rating-label">Scales past 20+ tools</div><div class="rating-value">Low&ndash;Medium</div><div class="rating-note">More becomes a flat junk drawer past ~15&ndash;20 items with no sub-grouping, and nothing promotes a frequently-used demoted tool back to one click.</div></div>
+        <div class="rating-item"><div class="rating-label">Interaction-model change</div><div class="rating-value">Low</div><div class="rating-note">Same rail, same click targets for the current top tools; the only new element is a pinned More button.</div></div>
+      </div>
+      <div class="checklist">
+        <span>&#10003; Select</span><span>&#10003; Pan</span><span>&#10003; Square</span><span>&#10003; Rectangle</span><span>&#10003; Circle</span><span>&#10003; Terminator</span><span>&#10003; Process</span><span>&#10003; Decision</span><span>&#10003; Input/Output</span><span>&#10003; Text</span><span>&#10003; Frame</span><span>&#10003; Image</span><span>&#10003; Pen</span><span>&#10003; Templates</span><span style="background:rgba(79,70,229,0.12);color:var(--accent);">14/14 present &middot; 0 clipped &middot; 0 scrollbars</span>
+      </div>
+      <div class="callout callout-accent" style="margin-top:14px;"><span>&#8505;</span><span><b>Honest tradeoff:</b> Templates and the four flowchart shapes are one click further away than they are today &mdash; this concept trades a little convenience for the four least-used tools in exchange for guaranteeing the bug can never recur, cheaply.</span></div>
+      <div class="pick-sentence">Pick this when the priority is shipping <b>the smallest, safest fix this week</b> that guarantees nothing is ever unreachable again, and you're okay revisiting how More is organized later.</div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ COMPARISON ═══════════════════════════ -->
+  <section id="compare">
+    <div class="section-eyebrow">06 &middot; Comparison</div>
+    <h2 class="section-title">Side by side</h2>
+    <p class="section-desc">All three fix both confirmed bugs by construction. They differ in how much they cost to build and how they'll age as MuMap adds tool #15, #20, #30.</p>
+    <div class="table-scroll">
+      <table class="compare">
+        <tr><th>Dimension</th><th>A &middot; Grouped Rail</th><th>B &middot; Floating Pill + Grid</th><th>C &middot; Fixed Rail + Overflow</th></tr>
+        <tr><td>Inspiration</td><td>Figma, Illustrator/Photoshop</td><td>Miro / FigJam</td><td>VS Code Activity Bar</td></tr>
+        <tr><td>Top-level slots today</td><td>9 (of 14 tools)</td><td>8 (of 14 tools)</td><td>8, + pinned More</td></tr>
+        <tr><td>Implementation cost</td><td>Low</td><td>Medium&ndash;High</td><td>Low</td></tr>
+        <tr><td>Discoverability</td><td>Medium &mdash; corner flag is a learned cue</td><td>Medium &mdash; shape variety is one popover deep</td><td>High for top 8, low for More until opened once</td></tr>
+        <tr><td>Scales past 20+ tools</td><td>Medium &mdash; free within a family, costly across new categories</td><td>High &mdash; grid absorbs growth, pill height untouched</td><td>Low&ndash;Medium &mdash; More becomes an unsorted list over time</td></tr>
+        <tr><td>Interaction-model change</td><td>Low</td><td>High</td><td>Low</td></tr>
+        <tr><td>Best for</td><td>Smallest change with real headroom</td><td>Long-term scalability investment</td><td>Cheapest, safest fix shipped now</td></tr>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  const ICON = {
+    select: '<svg viewBox="0 0 24 24"><path d="M5 3l14.5 6.5-6.6 2.3-2.4 6.7z" stroke-linejoin="round"/></svg>',
+    pan: '<svg viewBox="0 0 24 24"><rect x="8.7" y="3" width="2.8" height="10" rx="1.3"/><rect x="12.1" y="4" width="2.8" height="10" rx="1.3"/><rect x="15.5" y="6" width="2.8" height="9" rx="1.3"/><path d="M6 12.5v2.3A6.2 6.2 0 0 0 12.2 21h1.6a6.2 6.2 0 0 0 6.2-6.2v-2.1"/></svg>',
+    square: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>',
+    rectangle: '<svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/></svg>',
+    circle: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>',
+    terminator: '<svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="10" rx="5"/></svg>',
+    process: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="1.5"/></svg>',
+    decision: '<svg viewBox="0 0 24 24"><path d="M12 2 22 12 12 22 2 12Z" stroke-linejoin="round"/></svg>',
+    io: '<svg viewBox="0 0 24 24"><path d="M8 5h13l-4 14H3Z" stroke-linejoin="round"/></svg>',
+    text: '<svg viewBox="0 0 24 24"><path d="M4 6h16M12 6v14"/></svg>',
+    frame: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1.5"/><rect x="7.5" y="7.5" width="9" height="9" rx="0.5"/></svg>',
+    image: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M4.5 17l4.5-4.5 3.5 3.5L17 11l3 3.5"/></svg>',
+    pen: '<svg viewBox="0 0 24 24"><path d="M4 20l3-1 9.5-9.5-2-2L5 17z" stroke-linejoin="round"/><path d="M15 6.5l2.5 2.5"/></svg>',
+    templates: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="6.5" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>',
+    more: '<svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>',
+    plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[data-icon]').forEach(el => {
+      if (ICON[el.dataset.icon]) el.innerHTML = ICON[el.dataset.icon];
+    });
+  });
+
+  // ---------- shared interactions ----------
+  function setMode(btn, groupSelector) {
+    btn.closest(groupSelector).querySelectorAll('.rail-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+
+  function flashActive(btn) {
+    btn.classList.add('flash');
+    setTimeout(() => btn.classList.remove('flash'), 260);
+  }
+
+  function pickColor(sw) {
+    sw.parentElement.querySelectorAll('.color-swatch').forEach(s => s.style.outline = '1px solid var(--border)');
+    sw.style.outline = '2px solid var(--accent)';
+  }
+
+  function swapFamilyFace(slotBtn, iconKey, label) {
+    const iconEl = slotBtn.querySelector('.icon');
+    iconEl.innerHTML = ICON[iconKey];
+    slotBtn.title = label;
+    slotBtn.dataset.icon = iconKey;
+  }
+
+  function selectGridCell(cell) {
+    cell.parentElement.querySelectorAll('.grid-cell').forEach(c => c.classList.remove('selected'));
+    cell.classList.add('selected');
+    setTimeout(() => { closeAllFlyouts(); }, 400);
+  }
+
+  function selectMoreItem(item) {
+    item.parentElement.querySelectorAll('.menu-item').forEach(i => i.classList.remove('selected'));
+    item.classList.add('selected');
+    setTimeout(() => { closeAllFlyouts(); }, 400);
+  }
+
+  // ---------- flyout positioning (the Bug 2 fix, reused everywhere) ----------
+  function positionFlyout(wrap, flyout, boundsEl) {
+    flyout.style.top = '0px';
+    flyout.style.bottom = 'auto';
+    const wrapRect = wrap.getBoundingClientRect();
+    const boundsRect = boundsEl.getBoundingClientRect();
+    const fH = flyout.offsetHeight;
+    const margin = 10;
+    let desiredTop = wrapRect.top;
+    const maxTop = boundsRect.bottom - fH - margin;
+    const minTop = boundsRect.top + margin;
+    if (desiredTop > maxTop) desiredTop = maxTop;
+    if (desiredTop < minTop) desiredTop = minTop;
+    flyout.style.top = (desiredTop - wrapRect.top) + 'px';
+  }
+
+  function closeAllFlyouts() {
+    document.querySelectorAll('.flyout.open').forEach(f => { f.classList.remove('open'); });
+    document.querySelectorAll('.flyout-active').forEach(b => b.classList.remove('flyout-active'));
+  }
+
+  function toggleFlyout(trigger) {
+    const wrap = trigger.closest('[data-flyout-wrap]');
+    const flyout = wrap.querySelector('.flyout');
+    const frame = trigger.closest('.frame');
+    const bounds = frame ? frame.querySelector('.frame-main') : wrap.parentElement;
+    const isOpen = flyout.classList.contains('open');
+    closeAllFlyouts();
+    if (!isOpen) {
+      flyout.classList.add('open');
+      positionFlyout(wrap, flyout, bounds);
+      trigger.classList.add('flyout-active');
+    }
+  }
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('[data-flyout-wrap]')) closeAllFlyouts();
+  });
+
+  // ---------- Bug 2 isolated demo ----------
+  let useFixedPositioning = true;
+  function toggleFixDemo() {
+    useFixedPositioning = document.getElementById('fix-toggle').checked;
+    document.getElementById('fix-toggle-label').textContent = useFixedPositioning
+      ? 'Fixed positioning (clamped)'
+      : "Buggy positioning (today's code: left:100%, top:0)";
+    closeAllFlyouts();
+  }
+  function toggleBugDemoFlyout(trigger) {
+    const wrap = trigger.closest('[data-flyout-wrap]');
+    const flyout = wrap.querySelector('.flyout');
+    const frame = document.getElementById('bug-demo-frame');
+    const isOpen = flyout.classList.contains('open');
+    closeAllFlyouts();
+    if (isOpen) return;
+    flyout.classList.add('open');
+    if (useFixedPositioning) {
+      positionFlyout(wrap, flyout, frame);
+    } else {
+      flyout.style.top = '0px';
+      flyout.style.bottom = 'auto';
+    }
+    trigger.classList.add('flyout-active');
+  }
+
+  // ---------- live usage readouts ----------
+  function reportUsage(measureId, availId, outId) {
+    const m = document.getElementById(measureId);
+    const a = document.getElementById(availId);
+    const out = document.getElementById(outId);
+    if (!m || !a || !out) return;
+    const used = m.scrollHeight;
+    const avail = a.clientHeight;
+    const ok = used <= avail;
+    out.innerHTML = '<b>' + used + 'px</b> of content in <b>' + avail + 'px</b> available &nbsp;&bull;&nbsp; '
+      + (ok ? 'fits with room to spare &mdash; 0 scrollbars, 0 clipped icons' : 'OVERFLOW by ' + (used - avail) + 'px &mdash; this is today\'s bug');
+    out.classList.toggle('bad', !ok);
+  }
+
+  window.addEventListener('load', () => {
+    reportUsage('problem-rail', 'problem-avail', 'problem-usage');
+    reportUsage('a-rail', 'a-main', 'a-usage');
+    reportUsage('b-pill', 'b-main', 'b-usage');
+    reportUsage('c-rail', 'c-main', 'c-usage');
+  });
+</script>
