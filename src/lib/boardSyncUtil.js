@@ -18,6 +18,14 @@ export function rowToTile(row) {
     tags: row.tags || [],
     status: row.status,
     points: row.points,
+    // authorId: server-trigger-stamped, read-only from here — see
+    // interface.md's "Local tile model additions". Never sent back in
+    // tileToRow below.
+    authorId: row.author_id ?? null,
+    // reflectionSessionId: client-set at creation only (see addTileAt /
+    // the connector quick-create menu in MuMap.jsx), round-tripped
+    // verbatim on every read/write after that like any other tile field.
+    reflectionSessionId: row.reflection_session_id ?? null,
   };
 }
 
@@ -38,6 +46,11 @@ export function tileToRow(t, mapId) {
     tags: t.tags || [],
     status: t.status || "none",
     points: t.points ?? null,
+    // author_id deliberately omitted — a before-insert trigger stamps it
+    // server-side and this client never writes it, on insert OR update
+    // (see interface.md: omitting it here is load-bearing for the
+    // trigger's "immutable after creation" guarantee under upsert).
+    reflection_session_id: t.reflectionSessionId ?? null,
     updated_at: new Date().toISOString(),
   };
 }

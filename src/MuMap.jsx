@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Download, Upload, X, Trash2, ArrowLeft, Share2, Eye,
   ZoomIn, ZoomOut, Maximize, Undo2, Redo2, Copy,
-  Send, Vote as VoteIcon, MessageSquare,
+  Send, Vote as VoteIcon, MessageSquare, Lock, Loader2, CheckCircle2, Plus as PlusIcon,
 } from "lucide-react";
 import { useBoardSync } from "./hooks/useBoardSync.js";
 import { useMapPermission } from "./hooks/useMapPermission.js";
@@ -16,6 +16,7 @@ import ShareMapPanel from "./components/ShareMapPanel.jsx";
 import TileNode from "./components/board/TileNode.jsx";
 import DrawingLayer from "./components/board/DrawingLayer.jsx";
 import ToolPill from "./components/board/ToolPill.jsx";
+import LockedPlaceholderTile from "./components/board/LockedPlaceholderTile.jsx";
 import { RESIZE_HANDLE } from "./components/board/tileGeometry.js";
 import { tileStyles } from "./components/board/tileStyles.js";
 import { SHAPE_ICONS } from "./components/board/shapeIcons.jsx";
@@ -38,6 +39,8 @@ const LINK_PREVIEW = "#4f46e5";
 const DANGER = "#dc2626";
 const PANEL_BG = "#ffffff";
 const SUBTLE_BG = "#f3f4f6";
+const SUCCESS = "#16a34a";
+const SUCCESS_SOFT = "rgba(22,163,74,0.1)";
 
 const BOARD_W = 4000;
 const BOARD_H = 3000;
@@ -127,6 +130,7 @@ export default function MuMap({ mapId }) {
     comments, authorProfiles, addComment, deleteComment,
     voteSession, votes, startVoteSession, endVoteSession, castVote, retractVote,
     strokes, addStroke, deleteStroke,
+    reflectionSession, reflectionProgress, reflectionPlaceholders, startReflectionSession, endReflectionSession,
   } = useBoardSync(permission ? mapId : null); // don't fetch/subscribe until access is confirmed
 
   const [shareOpen, setShareOpen] = useState(false);
@@ -163,6 +167,9 @@ export default function MuMap({ mapId }) {
   const [commentDraft, setCommentDraft] = useState("");
   const [voteStartOpen, setVoteStartOpen] = useState(false);
   const [voteBudgetDraft, setVoteBudgetDraft] = useState(3);
+  const [reflectionStartOpen, setReflectionStartOpen] = useState(false);
+  const [revealAnim, setRevealAnim] = useState(null); // { sessionId, cards: [{id,x,y,w,h,author_id}], flipped } — drives the reveal flip transition
+  const [revealFlash, setRevealFlash] = useState(null); // { count } — brief "Revealed — N cards" badge shown right after the flip finishes
   const [drawColor, setDrawColor] = useState(DRAW_COLORS[0]);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [shapesOpen, setShapesOpen] = useState(false); // Shapes grid popover — new in the floating-pill redesign
@@ -182,6 +189,52 @@ export default function MuMap({ mapId }) {
   const wasSoleSelectedRef = useRef(false); // did this pointerdown land on the one already-selected, already-armed tile?
   const armedTileIdRef = useRef(null); // tile primed by a genuine prior click — its next plain click enters edit
   const clickTrackRef = useRef({ id: null, t: 0 }); // last tile click, for manual double-click detection
+  const lastPlaceholdersRef = useRef([]); // most recent non-empty reflectionPlaceholders snapshot — survives useBoardSync clearing it the instant a session reveals, so the flip animation below still has something to animate from
+  const reflectionInitRef = useRef(false); // has the reveal-trigger effect below seen its first reflectionSession yet (guards against animating an already-revealed session on page load)
+  const prevReflectionRevealedRef = useRef(false);
+
+  // Keep the last-known locked-card positions/authors around a beat past
+  // when useBoardSync itself clears reflectionPlaceholders (which happens
+  // the instant the session reveals) — the reveal effect below needs them
+  // a moment longer to know what to flip.
+  useEffect(() => {
+    if (reflectionPlaceholders.length) lastPlaceholdersRef.current = reflectionPlaceholders;
+  }, [reflectionPlaceholders]);
+
+  // Fires the staggered flip transition the instant this client observes
+  // reflectionSession.revealed flip false → true via realtime (see
+  // interface.md — there's no separate persisted "revealing" state, this
+  // transient animation window is purely client-side). Skips entirely if
+  // this client had nothing locked (e.g. it was the only author, or it
+  // loaded the page after the reveal already happened).
+  useEffect(() => {
+    if (!reflectionSession) { reflectionInitRef.current = false; return; }
+    if (!reflectionInitRef.current) {
+      reflectionInitRef.current = true;
+      prevReflectionRevealedRef.current = !!reflectionSession.revealed;
+      return;
+    }
+    const wasRevealed = prevReflectionRevealedRef.current;
+    prevReflectionRevealedRef.current = !!reflectionSession.revealed;
+    if (wasRevealed || !reflectionSession.revealed) return;
+
+    const cards = lastPlaceholdersRef.current;
+    lastPlaceholdersRef.current = [];
+    if (!cards.length) return;
+
+    const sessionId = reflectionSession.id;
+    setRevealAnim({ sessionId, cards, flipped: false });
+    const flipTimer = setTimeout(() => {
+      setRevealAnim((r) => (r && r.sessionId === sessionId ? { ...r, flipped: true } : r));
+    }, 30);
+    const totalMs = 700 + cards.length * 90 + 350;
+    const clearTimer = setTimeout(() => {
+      setRevealAnim((r) => (r && r.sessionId === sessionId ? null : r));
+      setRevealFlash({ count: cards.length });
+      setTimeout(() => setRevealFlash(null), 3000);
+    }, totalMs);
+    return () => { clearTimeout(flipTimer); clearTimeout(clearTimer); };
+  }, [reflectionSession]);
 
   // ═══════════════════════════════════════════════════════════════════════
   // TOAST
@@ -260,12 +313,18 @@ export default function MuMap({ mapId }) {
   // ═══════════════════════════════════════════════════════════════════════
   const addTileAt = useCallback((type, bx, by, shape = "rectangle", overrides) => {
     if (readOnly) return undefined;
-    const t = makeTile(type, shape, bx, by, overrides);
+    // Card tiles (the only thing addTileAt ever creates) get stamped with
+    // the active reflection session, if any, so they're born private —
+    // author_id is stamped server-side by a trigger, not here (see
+    // interface.md/boardSyncUtil.js).
+    const reflectionStamp = reflectionSession?.active && !reflectionSession?.revealed
+      ? { reflectionSessionId: reflectionSession.id } : undefined;
+    const t = makeTile(type, shape, bx, by, { ...reflectionStamp, ...overrides });
     dispatch({ type: "ADD_TILE", tile: t });
     setEditingId(t.id);
     setSelection(new Set([t.id]));
     return t;
-  }, [dispatch, readOnly]);
+  }, [dispatch, readOnly, reflectionSession]);
 
   const addShapeInView = useCallback((shapeKey) => {
     if (readOnly) return;
@@ -825,6 +884,10 @@ export default function MuMap({ mapId }) {
         .template-flyout-item:hover { background: ${SUBTLE_BG}; }
         .shape-grid-cell:hover { background: ${SUBTLE_BG}; color: ${INK}; }
         .text-tile:hover { outline-color: rgba(31,41,55,0.25) !important; }
+        .spin { animation: mumap-spin 0.9s linear infinite; }
+        @keyframes mumap-spin { to { transform: rotate(360deg); } }
+        .add-card-ghost { transition: background 0.12s; }
+        .add-card-ghost:hover { background: rgba(79,70,229,0.09) !important; }
       `}</style>
 
       {/* ════════ HEADER ════════ */}
@@ -874,6 +937,51 @@ export default function MuMap({ mapId }) {
                   <button style={styles.voteStartBtn} onClick={() => { startVoteSession(voteBudgetDraft); setVoteStartOpen(false); }}>
                     Start voting
                   </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Reflection session badge — shown to EVERYONE identically while active,
+              including the owner (no separate facilitator indicator): this is what
+              visually enforces "even the owner is blind to content before reveal". */}
+          {reflectionSession && (revealAnim || reflectionSession.active || revealFlash) && (
+            <div style={{ ...styles.voteStatusBadge, ...(revealFlash ? { background: SUCCESS_SOFT, color: SUCCESS } : {}) }}>
+              {revealAnim ? (
+                <><Loader2 size={12} className="spin" /> Revealing…</>
+              ) : revealFlash ? (
+                <><CheckCircle2 size={12} /> Revealed — {revealFlash.count} card{revealFlash.count === 1 ? "" : "s"} now visible</>
+              ) : (
+                <><Lock size={12} /> Reflecting — cards are private</>
+              )}
+            </div>
+          )}
+
+          {isOwner && (
+            <div style={{ position: "relative" }}>
+              {reflectionSession?.active && !reflectionSession?.revealed ? (
+                <button className="toolbtn" style={styles.btn} onClick={endReflectionSession} disabled={!!revealAnim}>
+                  <Lock size={14} /> End reflection session
+                </button>
+              ) : (
+                <button className="toolbtn" style={styles.btn} onClick={() => setReflectionStartOpen((o) => !o)}>
+                  <Lock size={14} /> Start reflection session
+                </button>
+              )}
+              {reflectionStartOpen && (
+                <div style={{ ...styles.voteStartPopover, width: 240, gap: 10 }} onPointerDown={(e) => e.stopPropagation()}>
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: INK }}>Start a Reflection Session</div>
+                  <div style={{ fontSize: 11.5, color: INK_SOFT, lineHeight: 1.5 }}>
+                    Everyone writes privately — new cards are visible only to their author until you end
+                    the session. Existing cards on the board aren't affected.
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+                    <button style={{ flex: 1, border: "none", borderRadius: 7, padding: "7px 8px", fontSize: 12, fontWeight: 700, fontFamily: FONT, cursor: "pointer", background: SUBTLE_BG, color: INK_SOFT }}
+                      onClick={() => setReflectionStartOpen(false)}>Cancel</button>
+                    <button style={styles.voteStartBtn} onClick={() => { startReflectionSession(); setReflectionStartOpen(false); }}>
+                      Start session
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -946,6 +1054,36 @@ export default function MuMap({ mapId }) {
           />
           <input ref={imageInputRef} type="file" accept="image/*" style={{ display: "none" }}
             onChange={(e) => { const f = e.target.files?.[0]; if (f) addImageAt(f); e.target.value = ""; }} />
+
+          {/* ════════ GHOST-COUNT PANEL — floating top-right of the canvas, not a
+              header pill: it's a per-author list, doesn't fit the single-number
+              pill shape Vote Session uses. Screen-space (sibling of the pan/zoom
+              layer), so it stays put regardless of pan/zoom. Excludes the current
+              viewer's own row — you always know your own count, the point is
+              visibility into everyone else's progress. ════════ */}
+          {reflectionSession?.active && !reflectionSession?.revealed && (() => {
+            const others = reflectionProgress.filter((p) => p.author_id !== user?.id && p.card_count > 0);
+            if (others.length === 0) return null;
+            return (
+              <div style={styles.ghostPanel}>
+                <div style={styles.ghostPanelTitle}><Lock size={11} /> Reflecting now</div>
+                {others.map((p) => {
+                  const prof = authorProfiles[p.author_id];
+                  return (
+                    <div key={p.author_id} style={styles.ghostRow}>
+                      <div style={{ ...styles.avatar, width: 20, height: 20, fontSize: 9.5, borderWidth: 1.5, marginLeft: 0 }}>
+                        {(prof?.display_name || "?").slice(0, 1).toUpperCase()}
+                      </div>
+                      {prof?.display_name || "Someone"}
+                      <span style={styles.ghostCount}>{p.card_count} card{p.card_count === 1 ? "" : "s"}</span>
+                    </div>
+                  );
+                })}
+                <div style={styles.ghostPanelFoot}>Content stays hidden — this is a live count only, until the session ends.</div>
+              </div>
+            );
+          })()}
+
           <div
             ref={boardRef}
             style={{ ...styles.board, cursor: cursorStyle }}
@@ -1115,6 +1253,26 @@ export default function MuMap({ mapId }) {
                 );
               })}
 
+              {/* "+ Add a card" — per-frame affordance during an active reflection
+                  session (approved beyond the plan; no new creation mechanism, just
+                  a UI nicety making clear you can keep writing). Stacks below
+                  whatever's already inside the frame; hidden once the frame's full. */}
+              {reflectionSession?.active && !reflectionSession?.revealed && !readOnly && frameTiles.map((t) => {
+                const enclosed = tiles.filter((tl) => tl.kind !== "frame" && isFullyEnclosed(tl, t));
+                const stackY = enclosed.length ? Math.max(...enclosed.map((tl) => tl.y + tl.h)) + 16 : t.y + 50;
+                if (stackY + 44 > t.y + t.h - 8) return null; // no room left in the frame
+                const gw = Math.min(240, t.w - 40);
+                const gx = t.x + (t.w - gw) / 2;
+                return (
+                  <button key={`add-card-${t.id}`} className="add-card-ghost"
+                    style={{ ...styles.addCardGhost, left: gx, top: stackY, width: gw, height: 44, padding: 0 }}
+                    onClick={() => addTileAt("user-story", gx, stackY, "rectangle")}
+                  >
+                    <PlusIcon size={13} /> Add a card
+                  </button>
+                );
+              })}
+
               {/* TILES */}
               {regularTiles.map((t) => {
                 const isSel = selection.has(t.id);
@@ -1168,6 +1326,46 @@ export default function MuMap({ mapId }) {
                 );
               })}
 
+              {/* LOCKED PLACEHOLDERS — other authors' in-flight cards during an active,
+                  not-yet-revealed session. Sourced from reflectionPlaceholders (a
+                  synthetic RPC result: id/author_id/x/y/w/h only), not from `tiles` —
+                  per interface.md a hidden tile's real row is never delivered to a
+                  non-author at all, so this is the only channel this data arrives on.
+                  Skipped for any card currently mid-reveal-flip (rendered below instead). */}
+              {reflectionSession?.active && !reflectionSession?.revealed && reflectionPlaceholders.map((p) => {
+                if (revealAnim?.cards.some((c) => c.id === p.id)) return null;
+                const prof = authorProfiles[p.author_id];
+                return (
+                  <LockedPlaceholderTile key={`locked-${p.id}`} x={p.x} y={p.y} w={p.w} h={p.h}
+                    authorName={prof?.display_name} authorColor={prof?.color} />
+                );
+              })}
+
+              {/* REVEAL TRANSITION — a staggered 3D flip (lock face → content face) for
+                  every card that was locked for this viewer a moment ago, firing once
+                  when the session's `revealed` flag flips via realtime (see the effect
+                  that sets revealAnim). The real tile is already rendering normally in
+                  the TILES block above (arrived via useBoardSync's post-reveal re-fetch)
+                  — this overlay just covers it with the lock face and rotates away,
+                  rather than duplicating TileNode's render logic as a "back face". */}
+              {revealAnim && revealAnim.cards.map((c, i) => {
+                const prof = authorProfiles[c.author_id];
+                return (
+                  <div key={`reveal-${c.id}`} style={{ position: "absolute", left: c.x, top: c.y, width: c.w, height: c.h, perspective: 1000, zIndex: 9, pointerEvents: "none" }}>
+                    <div style={{
+                      position: "relative", width: "100%", height: "100%", transformStyle: "preserve-3d",
+                      transform: revealAnim.flipped ? "rotateY(180deg)" : "rotateY(0deg)",
+                      transition: "transform 700ms cubic-bezier(.45,.15,.2,1.15)",
+                      transitionDelay: `${i * 90}ms`,
+                    }}>
+                      <div style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden", borderRadius: 14 }}>
+                        <LockedPlaceholderTile x={0} y={0} w={c.w} h={c.h} authorName={prof?.display_name} authorColor={prof?.color} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
               <DrawingLayer
                 boardW={BOARD_W}
                 boardH={BOARD_H}
@@ -1210,7 +1408,11 @@ export default function MuMap({ mapId }) {
           )}
 
           {/* ════════ EMPTY STATE ════════ */}
-          {tiles.length === 0 && loaded && (
+          {/* Suppressed while reflectionPlaceholders has entries — the board
+              isn't really empty from this viewer's perspective, it just has
+              nothing THEY can see yet; showing "pick a shape…" centered text
+              behind/through a locked card reads as a layout bug, not a hint. */}
+          {tiles.length === 0 && loaded && reflectionPlaceholders.length === 0 && (
             <div style={styles.emptyHint}>
               {readOnly ? "This map is empty so far." : "Pick a shape from the left panel, or double-click the board to pin your first tile."}
             </div>
@@ -1320,7 +1522,9 @@ export default function MuMap({ mapId }) {
             const top = quickCreate.y * zoom + pan.y;
             const createLinkedTile = (type, shape, overrides = {}) => {
               const dims = SHAPES[shape] || SHAPES.rectangle;
-              const t = makeTile(type, shape, quickCreate.x - dims.w / 2, quickCreate.y - dims.h / 2, overrides);
+              const reflectionStamp = reflectionSession?.active && !reflectionSession?.revealed
+                ? { reflectionSessionId: reflectionSession.id } : undefined;
+              const t = makeTile(type, shape, quickCreate.x - dims.w / 2, quickCreate.y - dims.h / 2, { ...reflectionStamp, ...overrides });
               dispatch({ type: "ADD_TILE", tile: t });
               dispatch({ type: "ADD_LINK", link: makeLink(quickCreate.fromId, t.id, { directed: true }) });
               setSelection(new Set([t.id]));
@@ -1447,6 +1651,16 @@ const styles = {
   voteStartLabel: { fontSize: 11, fontWeight: 700, color: INK_SOFT },
   voteStartInput: { padding: "6px 8px", borderRadius: 7, border: `1px solid ${BORDER}`, fontSize: 13, color: INK, fontFamily: FONT },
   voteStartBtn: { padding: "7px 10px", borderRadius: 7, border: "none", background: ACCENT, color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
+
+  // Reflection ghost-count panel — floating top-right of the canvas
+  ghostPanel: { position: "absolute", top: 14, right: 14, zIndex: 6, width: 190, background: "rgba(255,255,255,0.96)", backdropFilter: "blur(4px)", border: `1px solid ${BORDER}`, borderRadius: 10, boxShadow: "0 8px 22px rgba(31,41,55,0.14)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 },
+  ghostPanelTitle: { display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 800, letterSpacing: 0.03, textTransform: "uppercase", color: ACCENT },
+  ghostRow: { display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: INK },
+  ghostCount: { marginLeft: "auto", fontWeight: 700, color: INK_SOFT },
+  ghostPanelFoot: { fontSize: 10, color: INK_FAINT, lineHeight: 1.4, borderTop: `1px solid ${BORDER}`, paddingTop: 7 },
+
+  // "+ Add a card" per-frame affordance during an active reflection session
+  addCardGhost: { position: "absolute", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, border: "1.5px dashed rgba(79,70,229,0.4)", borderRadius: 12, background: "rgba(79,70,229,0.04)", color: ACCENT, fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: FONT },
 
   // Collaborator avatars
   avatarStack: { display: "flex", alignItems: "center", marginRight: 4 },

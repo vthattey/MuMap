@@ -1,0 +1,417 @@
+<title>Retro Board Blueprint</title>
+<style>
+  :root {
+    --bg: #F3F5F6;
+    --surface: #FFFFFF;
+    --surface-2: #EDF0F2;
+    --ink: #1B2430;
+    --ink-soft: rgba(27,36,48,0.66);
+    --ink-faint: rgba(27,36,48,0.46);
+    --border: #DBE1E5;
+    --accent: #4F46E5;
+    --accent-soft: rgba(79,70,229,0.10);
+    --tier1: #17795F;
+    --tier1-soft: rgba(23,121,95,0.09);
+    --tier2: #A66A14;
+    --tier2-soft: rgba(166,106,20,0.10);
+    --tier3: #5F5876;
+    --tier3-soft: rgba(95,88,118,0.09);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #10151B;
+      --surface: #1A222B;
+      --surface-2: #212B35;
+      --ink: #E9EDEF;
+      --ink-soft: rgba(233,237,239,0.70);
+      --ink-faint: rgba(233,237,239,0.48);
+      --border: #2C3944;
+      --accent: #8B84F5;
+      --accent-soft: rgba(139,132,245,0.14);
+      --tier1: #3FC29E;
+      --tier1-soft: rgba(63,194,158,0.12);
+      --tier2: #E0A542;
+      --tier2-soft: rgba(224,165,66,0.12);
+      --tier3: #A79EC4;
+      --tier3-soft: rgba(167,158,196,0.12);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #10151B;
+    --surface: #1A222B;
+    --surface-2: #212B35;
+    --ink: #E9EDEF;
+    --ink-soft: rgba(233,237,239,0.70);
+    --ink-faint: rgba(233,237,239,0.48);
+    --border: #2C3944;
+    --accent: #8B84F5;
+    --accent-soft: rgba(139,132,245,0.14);
+    --tier1: #3FC29E;
+    --tier1-soft: rgba(63,194,158,0.12);
+    --tier2: #E0A542;
+    --tier2-soft: rgba(224,165,66,0.12);
+    --tier3: #A79EC4;
+    --tier3-soft: rgba(167,158,196,0.12);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55;
+  }
+  .display {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  }
+  .page {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 56px 24px 96px;
+  }
+
+  .eyebrow {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1.display {
+    font-size: clamp(30px, 4.4vw, 42px);
+    font-weight: 600;
+    margin: 10px 0 14px;
+    text-wrap: balance;
+    letter-spacing: -0.01em;
+  }
+  .subhead {
+    font-size: 16.5px;
+    color: var(--ink-soft);
+    max-width: 62ch;
+    margin: 0 0 28px;
+  }
+
+  .existing-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    padding: 16px 18px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 44px;
+  }
+  .existing-strip .label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-right: 4px;
+    flex-shrink: 0;
+  }
+  .chip {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    background: var(--surface-2);
+    border-radius: 999px;
+    padding: 5px 11px;
+    white-space: nowrap;
+  }
+
+  section.tier { margin-bottom: 48px; }
+  .tier-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .tier-dot {
+    width: 11px; height: 11px; border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .tier-head h2.display {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0;
+  }
+  .tier-sub {
+    font-size: 13.5px;
+    color: var(--ink-faint);
+    margin: 0 0 20px 23px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left-width: 4px;
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+  }
+  .card h3 {
+    font-size: 15.5px;
+    font-weight: 700;
+    margin: 0 0 6px;
+    color: var(--ink);
+  }
+  .card p {
+    font-size: 14px;
+    color: var(--ink-soft);
+    margin: 0 0 12px;
+    max-width: 66ch;
+  }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 3px 9px;
+    border-radius: 999px;
+  }
+  .tag.new {
+    background: var(--surface-2);
+    color: var(--ink-faint);
+  }
+  .tag.builds {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .t1 { border-left-color: var(--tier1); }
+  .t1-dot { background: var(--tier1); }
+  .t1-name { color: var(--tier1); }
+  .t2 { border-left-color: var(--tier2); }
+  .t2-dot { background: var(--tier2); }
+  .t2-name { color: var(--tier2); }
+  .t3 { border-left-color: var(--tier3); }
+  .t3-dot { background: var(--tier3); }
+  .t3-name { color: var(--tier3); }
+
+  .research {
+    margin: 52px 0 44px;
+  }
+  .research h2.display {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+  .research .tier-sub { margin-left: 0; margin-bottom: 18px; }
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; }
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ink-faint);
+    font-weight: 700;
+    background: var(--surface-2);
+  }
+  td:first-child { font-weight: 700; white-space: nowrap; color: var(--ink); }
+  tr:last-child td { border-bottom: none; }
+  td { color: var(--ink-soft); }
+
+  .recommend {
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: 12px;
+    padding: 22px 24px;
+    margin-top: 40px;
+  }
+  .recommend .label {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+    display: block;
+  }
+  .recommend p {
+    font-size: 15px;
+    color: var(--ink);
+    margin: 0;
+    max-width: 66ch;
+  }
+
+  footer {
+    margin-top: 48px;
+    font-size: 12px;
+    color: var(--ink-faint);
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+  }
+  footer a { color: var(--ink-faint); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .card { transition: border-color 0.15s ease; }
+  }
+</style>
+
+<div class="page">
+  <div class="eyebrow">MuMap &middot; Retro Board Blueprint</div>
+  <h1 class="display">What MuMap's retro board still needs to actually run a retrospective</h1>
+  <p class="subhead">A scrum-master's read on Retrium, Parabol, EasyRetro, Metro Retro, TeamRetro, GoRetro, and Miro/FigJam's retro templates — mapped against what MuMap's board already does for free, and what's genuinely missing.</p>
+
+  <div class="existing-strip">
+    <span class="label">Already in MuMap</span>
+    <span class="chip">Frames (columns)</span>
+    <span class="chip">Dot-voting w/ budget + reveal</span>
+    <span class="chip">Comments per card</span>
+    <span class="chip">Tags / status / points</span>
+    <span class="chip">Realtime presence</span>
+    <span class="chip">View / comment / edit tiers</span>
+    <span class="chip">Templates system</span>
+  </div>
+
+  <section class="tier">
+    <div class="tier-head">
+      <span class="tier-dot t1-dot"></span>
+      <h2 class="display t1-name">Tier 1 &mdash; Essential</h2>
+    </div>
+    <p class="tier-sub">A retro run on the board today is missing something that breaks the format, not just a nice-to-have.</p>
+
+    <div class="card t1">
+      <h3>Private reflection &rarr; synchronized reveal</h3>
+      <p>Prevents anchoring bias &mdash; the single most-cited reason dedicated retro tools beat a generic whiteboard for this specific meeting. Cards you write stay visible only to you until the facilitator reveals the column, so the second person to write "the deploy process is broken" writes their own independent read instead of just agreeing.</p>
+      <div class="tags"><span class="tag new">New mechanism</span></div>
+    </div>
+
+    <div class="card t1">
+      <h3>Card grouping / clustering</h3>
+      <p>Ten near-duplicate "standup is too long" cards should become one topic before voting &mdash; otherwise the vote budget splits ten ways and the real signal disappears.</p>
+      <div class="tags"><span class="tag new">New mechanism</span></div>
+    </div>
+
+    <div class="card t1">
+      <h3>Action items with an owner + due date, carried into the next retro</h3>
+      <p>The single most common complaint about retros in practice: decisions get made and then nobody follows up. An action with no owner is a wish, not a commitment.</p>
+      <div class="tags">
+        <span class="tag builds">Builds on: tile status/points/tags shape</span>
+        <span class="tag new">+ new carry-over view</span>
+      </div>
+    </div>
+
+    <div class="card t1">
+      <h3>Facilitator phase control</h3>
+      <p>Even a lightweight "current phase, advance, lock" signal stops boards drifting into premature voting or one card eating the whole discussion. Doesn't need a full ceremony engine to be worth having.</p>
+      <div class="tags">
+        <span class="tag builds">Builds on: vote-session active/revealed pattern</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="tier">
+    <div class="tier-head">
+      <span class="tier-dot t2-dot"></span>
+      <h2 class="display t2-name">Tier 2 &mdash; High value</h2>
+    </div>
+    <p class="tier-sub">Meaningfully better retro, comparatively cheap to build.</p>
+
+    <div class="card t2">
+      <h3>More starter formats &mdash; Mad-Sad-Glad, 4Ls, Sailboat, DAKI/Starfish</h3>
+      <p>Different sprints call for different lenses: an emotionally rough sprint wants Mad-Sad-Glad, a process-maturity conversation wants DAKI. Costs almost nothing once one format works well.</p>
+      <div class="tags"><span class="tag builds">Fully reuses TEMPLATES &mdash; pure content, no new mechanism</span></div>
+    </div>
+
+    <div class="card t2">
+      <h3>Timer per phase</h3>
+      <p>A visible, shared countdown is most of what "facilitator pacing" feels like to participants, independent of full phase-gating.</p>
+      <div class="tags"><span class="tag new">New, small &mdash; broadcast like presence</span></div>
+    </div>
+
+    <div class="card t2">
+      <h3>Parking lot</h3>
+      <p>Keeps a good-but-off-topic idea from derailing the current discussion without discarding it outright.</p>
+      <div class="tags"><span class="tag builds">Almost free &mdash; a frame with different framing</span></div>
+    </div>
+
+    <div class="card t2">
+      <h3>Icebreaker / check-in prompt</h3>
+      <p>Cheap, and research consistently shows it's a genuine driver of participation quality, not just a nicety.</p>
+      <div class="tags"><span class="tag builds">Could be a pre-filled text tile in the template</span></div>
+    </div>
+
+    <div class="card t2">
+      <h3>Exportable retro summary</h3>
+      <p>Top-voted themes plus action items as a shareable artifact that outlives the live session &mdash; closes the loop with anyone who couldn't attend.</p>
+      <div class="tags"><span class="tag builds">Builds on existing board export</span></div>
+    </div>
+  </section>
+
+  <section class="tier">
+    <div class="tier-head">
+      <span class="tier-dot t3-dot"></span>
+      <h2 class="display t3-name">Tier 3 &mdash; Nice to have</h2>
+    </div>
+    <p class="tier-sub">Real differentiators, but bigger scope or lower urgency &mdash; several depend on Tier 1 landing first.</p>
+
+    <div class="card t3">
+      <h3>Cross-retro health checks / sentiment trends</h3>
+      <p>Turns "how's the team doing" into a trend line instead of a one-off gut check. The biggest scope item on this list &mdash; needs a metric that persists and aggregates across many retro boards, not just within one.</p>
+      <div class="tags"><span class="tag new">New data model</span></div>
+    </div>
+
+    <div class="card t3">
+      <h3>AI-assisted grouping suggestions / AI retro summary</h3>
+      <p>Removes facilitation burden &mdash; but only valuable once grouping (Tier 1) already exists to assist.</p>
+      <div class="tags"><span class="tag new">Depends on Tier 1 grouping &middot; needs LLM integration</span></div>
+    </div>
+
+    <div class="card t3">
+      <h3>External integrations &mdash; Jira, Slack, GitHub</h3>
+      <p>High value for teams already living in those tools, but real scope for a payoff that only matters once action items (Tier 1) exist.</p>
+      <div class="tags"><span class="tag new">Depends on Tier 1 action items &middot; OAuth + external APIs</span></div>
+    </div>
+
+    <div class="card t3">
+      <h3>Facilitator/observer roles, presentation mode, alias participation</h3>
+      <p>Polish that matters more at scale &mdash; large or cross-org retros &mdash; than for a typical single team.</p>
+      <div class="tags"><span class="tag builds">Extends existing permission tiers</span></div>
+    </div>
+  </section>
+
+  <div class="recommend">
+    <span class="label">Headline recommendation</span>
+    <p>Build <strong>private reflection &rarr; reveal</strong> first. It's the one gap that's actually specific to retros as a meeting format, not just "a nice board feature" &mdash; without it, MuMap's Retro template is a live-shared brainstorm wearing a retro's column labels, not an actual retrospective. Grouping and owned action items matter too, but the reveal mechanic is what makes this a real retrospective in the first place.</p>
+  </div>
+
+  <div class="research">
+    <h2 class="display">Market scan</h2>
+    <p class="tier-sub">The mechanism behind each tool, not the marketing claim.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tool</th><th>What it actually does</th></tr></thead>
+        <tbody>
+          <tr><td>Retrium</td><td>Facilitator-paced phase workflow; grouping role can be handed off and reclaimed; private voting, then reveal.</td></tr>
+          <tr><td>Parabol</td><td>Reflect &rarr; group &rarr; vote &rarr; discuss &rarr; action pipeline; hidden reflections until reveal, specifically to prevent anchoring; AI-named groups; actions sync to Jira/GitHub/GitLab.</td></tr>
+          <tr><td>EasyRetro</td><td>100+ templates; AI-generated end-of-retro summary; the simplest, most casual tool of the set.</td></tr>
+          <tr><td>Metro Retro</td><td>CSV/HTML export; broad SSO/login options on paid tier.</td></tr>
+          <tr><td>TeamRetro</td><td>Timer, chat, parking lot, facilitator/co-facilitator/observer roles, presentation mode; per-comment anonymity; health checks tracked across retros; open actions carried forward and reviewable.</td></tr>
+          <tr><td>GoRetro</td><td>Similar health-check and action-tracking positioning to TeamRetro.</td></tr>
+          <tr><td>Miro / FigJam</td><td>Same retro content (Start-Stop-Continue, Mad-Sad-Glad) on a general board, no phase-gating or facilitator ceremony &mdash; the closest existing comparison to MuMap's current retro template.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>
+    Full research notes: <code>.claude/features/retro-board-upgrade/research.md</code>
+  </footer>
+</div>

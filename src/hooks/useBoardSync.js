@@ -26,11 +26,52 @@ export function useBoardSync(mapId) {
   const [voteSession, setVoteSession] = useState(null);
   const [votes, setVotes] = useState([]);
   const [strokes, setStrokes] = useState([]);
+  const [reflectionSession, setReflectionSession] = useState(null);
+  const [reflectionProgress, setReflectionProgress] = useState([]); // [{author_id, card_count}]
+  const [reflectionPlaceholders, setReflectionPlaceholders] = useState([]); // [{id, author_id, x, y, w, h}] — synthetic, not real tile rows (see interface.md)
 
   const prevBoardRef = useRef(initialBoard);
   const syncMetaRef = useRef({ shouldSync: false });
   const channelRef = useRef(null);
   const lastCursorSentRef = useRef(0);
+  const reflectionSessionRef = useRef(null); // mirrors reflectionSession for the polling effect without resubscribing the realtime channel every time the session changes
+  const revealedSessionIdsRef = useRef(new Set()); // sessions we've already re-fetched tiles for on reveal — guards against double-fetching if the row updates more than once after revealed:true
+
+  // Ghost counts + locked-placeholder shells: per interface.md, neither can
+  // be event-driven — a hidden tile's INSERT is never delivered to non-
+  // authors at all (RLS blocks it at the realtime layer), so there's no
+  // signal to refresh on. Both are fetched together via the two RPCs and
+  // polled on a fixed interval (see the polling effect below) rather than
+  // "on tiles channel firing" as the plan originally proposed.
+  const refreshReflectionData = useCallback(async (sessionId) => {
+    if (!sessionId) { setReflectionProgress([]); setReflectionPlaceholders([]); return; }
+    const [{ data: progressRows, error: progErr }, { data: placeholderRows, error: phErr }] = await Promise.all([
+      supabase.rpc("reflection_progress", { p_session_id: sessionId }),
+      supabase.rpc("reflection_placeholders", { p_session_id: sessionId }),
+    ]);
+    if (progErr) console.error("[useBoardSync] reflection progress failed:", progErr);
+    if (phErr) console.error("[useBoardSync] reflection placeholders failed:", phErr);
+    setReflectionProgress(progressRows || []);
+    setReflectionPlaceholders(placeholderRows || []);
+    // Lazy-fetch-once-if-missing, same pattern comments/tiles use elsewhere
+    // in this file — ghost rows and placeholder shells only carry author_id,
+    // never a joined profile.
+    const seenIds = new Set([
+      ...(progressRows || []).map((r) => r.author_id),
+      ...(placeholderRows || []).map((r) => r.author_id),
+    ].filter(Boolean));
+    if (seenIds.size) {
+      setAuthorProfiles((prev) => {
+        const missing = [...seenIds].filter((id) => !prev[id]);
+        if (missing.length) {
+          supabase.from("profiles").select("id,display_name,color").in("id", missing).then(({ data }) => {
+            if (data?.length) setAuthorProfiles((p) => { const next = { ...p }; for (const row of data) next[row.id] = row; return next; });
+          });
+        }
+        return prev;
+      });
+    }
+  }, []);
 
   // Dispatch used by the canvas — every non-silent action gets diffed and
   // written to Supabase after the reducer applies it. Silent actions (drag/
@@ -49,19 +90,31 @@ export function useBoardSync(mapId) {
     rawDispatch({ ...action, _silent: true });
   }, [rawDispatch]);
 
+  // Once a session's `revealed` flips true, tiles that were created while
+  // hidden never had their INSERT delivered to non-authors — logical
+  // replication doesn't replay missed events — so every already-connected
+  // client (not just whoever clicked "End") needs an explicit re-fetch of
+  // that session's tiles to see them appear without a page reload.
+  const refetchRevealedTiles = useCallback(async (sessionId) => {
+    const { data, error } = await supabase.from("tiles").select("*").eq("reflection_session_id", sessionId);
+    if (error) { console.error("[useBoardSync] refetch revealed tiles failed:", error); return; }
+    for (const row of data || []) applyRemote({ type: "UPSERT_TILE", tile: rowToTile(row) });
+  }, [applyRemote]);
+
   // ── Initial load ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapId) return;
     let cancelled = false;
     setLoaded(false);
     (async () => {
-      const [{ data: tileRows }, { data: linkRows }, { data: commentRows }, { data: sessionRows }, { data: voteRows }, { data: strokeRows }] = await Promise.all([
+      const [{ data: tileRows }, { data: linkRows }, { data: commentRows }, { data: sessionRows }, { data: voteRows }, { data: strokeRows }, { data: reflectionRows }] = await Promise.all([
         supabase.from("tiles").select("*").eq("map_id", mapId),
         supabase.from("links").select("*").eq("map_id", mapId),
         supabase.from("comments").select("*, author:profiles!author_id(display_name,color)").eq("map_id", mapId).order("created_at", { ascending: true }),
         supabase.from("vote_sessions").select("*").eq("map_id", mapId).order("created_at", { ascending: false }).limit(1),
         supabase.from("votes").select("*").eq("map_id", mapId),
         supabase.from("strokes").select("*").eq("map_id", mapId),
+        supabase.from("reflection_sessions").select("*").eq("map_id", mapId).order("created_at", { ascending: false }).limit(1),
       ]);
       if (cancelled) return;
       const tiles = (tileRows || []).map(rowToTile);
@@ -77,10 +130,14 @@ export function useBoardSync(mapId) {
       setVoteSession((sessionRows && sessionRows[0]) || null);
       setVotes(voteRows || []);
       setStrokes(strokeRows || []);
+      const initialReflectionSession = (reflectionRows && reflectionRows[0]) || null;
+      setReflectionSession(initialReflectionSession);
+      reflectionSessionRef.current = initialReflectionSession;
+      if (initialReflectionSession?.active && !initialReflectionSession?.revealed) refreshReflectionData(initialReflectionSession.id);
       setLoaded(true);
     })();
     return () => { cancelled = true; };
-  }, [mapId, applyRemote]);
+  }, [mapId, applyRemote, refreshReflectionData]);
 
   // ── Diff-and-push local changes ──────────────────────────────────────
   // prevBoardRef tracks "last state known to match the database" — it only
@@ -157,6 +214,42 @@ export function useBoardSync(mapId) {
         setVotes((prev) => (prev.some((v) => v.id === row.id) ? prev.map((v) => (v.id === row.id ? row : v)) : [...prev, row]));
       });
 
+    // ── Reflection sessions ── mirrors the vote_sessions handler above:
+    // only one session is ever active per map, so the latest write is
+    // always the one worth showing (start, or the end/reveal update).
+    channel.on("postgres_changes", { event: "*", schema: "public", table: "reflection_sessions", filter: `map_id=eq.${mapId}` },
+      ({ eventType, new: row, old: oldRow }) => {
+        if (eventType === "DELETE") {
+          setReflectionSession((c) => (c?.id === oldRow.id ? null : c));
+          reflectionSessionRef.current = null;
+          setReflectionProgress([]);
+          setReflectionPlaceholders([]);
+          return;
+        }
+        const wasRevealed = reflectionSessionRef.current?.id === row.id && reflectionSessionRef.current?.revealed;
+        setReflectionSession(row);
+        reflectionSessionRef.current = row;
+        if (row.active && !row.revealed) {
+          refreshReflectionData(row.id);
+        } else {
+          // Ended/revealed (or never active) — ghost counts/placeholders no
+          // longer meaningful; the reveal transition (MuMap.jsx) is expected
+          // to have snapshotted the last-known placeholders itself before
+          // this clears, since it needs them a beat longer for the flip
+          // animation than useBoardSync does.
+          setReflectionProgress([]);
+          setReflectionPlaceholders([]);
+        }
+        // See refetchRevealedTiles above: this is the "every connected
+        // client" half of the reveal — fires once per session, on whichever
+        // client (owner's own "End" call included, via its own realtime
+        // echo) observes revealed flip true first.
+        if (row.revealed && !wasRevealed && !revealedSessionIdsRef.current.has(row.id)) {
+          revealedSessionIdsRef.current.add(row.id);
+          refetchRevealedTiles(row.id);
+        }
+      });
+
     // ── Drawing ──
     channel.on("postgres_changes", { event: "*", schema: "public", table: "strokes", filter: `map_id=eq.${mapId}` },
       ({ eventType, new: row, old: oldRow }) => {
@@ -207,7 +300,18 @@ export function useBoardSync(mapId) {
       setCollaborators([]);
       setRemoteCursors({});
     };
-  }, [mapId, user?.id, user?.email, profile?.display_name, profile?.color, applyRemote]);
+  }, [mapId, user?.id, user?.email, profile?.display_name, profile?.color, applyRemote, refreshReflectionData, refetchRevealedTiles]);
+
+  // ── Reflection ghost counts/placeholders: fixed-interval polling ────
+  // (Not event-driven — see refreshReflectionData's comment above for why.)
+  // Runs only while a session is active and not yet revealed; stops (and
+  // the effect's cleanup clears the interval) the moment either flips.
+  useEffect(() => {
+    if (!reflectionSession?.active || reflectionSession?.revealed) return;
+    const sessionId = reflectionSession.id;
+    const interval = setInterval(() => refreshReflectionData(sessionId), 4000);
+    return () => clearInterval(interval);
+  }, [reflectionSession?.id, reflectionSession?.active, reflectionSession?.revealed, refreshReflectionData]);
 
   // ── Outbound broadcasts (not persisted) ──────────────────────────────
   const broadcastTileUpdates = useCallback((updates) => {
@@ -263,6 +367,27 @@ export function useBoardSync(mapId) {
     if (error && error.code !== "42501") console.error("[useBoardSync] cast vote failed:", error);
   }, [mapId, user, voteSession]);
 
+  // ── Reflection sessions ── mirrors startVoteSession/endVoteSession above,
+  // minus a per-session config field (vote budget has no reflection
+  // equivalent). endReflectionSession does NOT itself re-fetch tiles — that
+  // happens in the reflection_sessions realtime handler above, on whichever
+  // client (this one included, via its own echo) sees revealed:true first,
+  // so it happens identically for every connected client, not just the
+  // one who clicked the button.
+  const startReflectionSession = useCallback(async () => {
+    if (!mapId || !user) return;
+    const { error } = await supabase.from("reflection_sessions").insert({ map_id: mapId, created_by: user.id });
+    if (error) console.error("[useBoardSync] start reflection session failed:", error);
+  }, [mapId, user]);
+
+  const endReflectionSession = useCallback(async () => {
+    if (!reflectionSession) return;
+    const { error } = await supabase.from("reflection_sessions")
+      .update({ active: false, revealed: true, ended_at: new Date().toISOString() })
+      .eq("id", reflectionSession.id);
+    if (error) console.error("[useBoardSync] end reflection session failed:", error);
+  }, [reflectionSession]);
+
   const retractVote = useCallback(async (voteId) => {
     const { error } = await supabase.from("votes").delete().eq("id", voteId);
     if (error) console.error("[useBoardSync] retract vote failed:", error);
@@ -306,5 +431,10 @@ export function useBoardSync(mapId) {
     strokes,
     addStroke,
     deleteStroke,
+    reflectionSession,
+    reflectionProgress,
+    reflectionPlaceholders,
+    startReflectionSession,
+    endReflectionSession,
   };
 }

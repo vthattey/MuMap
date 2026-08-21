@@ -1,0 +1,732 @@
+<title>Reflection Reveal</title>
+<style>
+  /* ── Design tokens — lifted from MuMap's actual theme (src/lib/theme.js,
+     tileStyles.js, MuMap.jsx styles object) so this mock reads as "the real
+     app," not an approximation. MuMap is light-only today (no dark mode
+     anywhere in the product), so this mock commits to that single light
+     look deliberately rather than inventing a dark variant the app doesn't
+     have — tokens are still declared explicitly (not left to inherit) per
+     the artifact contract. ────────────────────────────────────────────── */
+  :root{
+    --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --ink: #1f2937;
+    --ink-soft: rgba(31,41,55,0.62);
+    --ink-faint: rgba(31,41,55,0.45);
+    --border: #e5e7eb;
+    --accent: #4f46e5;
+    --accent-soft: rgba(79,70,229,0.1);
+    --panel: #ffffff;
+    --page-bg: #eef0f3;
+    --success: #16a34a;
+    --success-soft: rgba(22,163,74,0.1);
+    --card-green: #93d9a8;
+    --frame-color: #94a3b8;
+    --c-jordan: #7c3aed;
+    --c-priya: #f59e0b;
+    --c-sam: #0ea5e9;
+    /* mock-scaffold-only accent (never appears inside the faithful app reproduction) */
+    --dev: #b45309;
+    --dev-bg: #fffbeb;
+    --dev-border: #fcd34d;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--page-bg);
+    color:var(--ink);
+    font-family:var(--font);
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,p,ul{margin:0;}
+  img,svg{display:block;}
+
+  .page{max-width:1160px;margin:0 auto;padding:36px 24px 80px;}
+
+  /* ── Intro ─────────────────────────────────────────────────────── */
+  .intro{margin-bottom:32px;}
+  .intro h1{font-size:26px;font-weight:800;letter-spacing:-0.01em;color:var(--ink);}
+  .intro .sub{margin-top:6px;font-size:14px;color:var(--ink-soft);line-height:1.55;max-width:760px;}
+  .legend{display:flex;flex-wrap:wrap;gap:18px;margin-top:18px;font-size:12px;color:var(--ink-soft);}
+  .legend-item{display:flex;align-items:center;gap:6px;}
+  .legend-swatch{width:14px;height:14px;border-radius:4px;flex-shrink:0;}
+
+  .devnote{
+    margin-top:20px;
+    background:var(--dev-bg);
+    border:1px dashed var(--dev-border);
+    border-radius:10px;
+    padding:14px 16px;
+  }
+  .devnote-label{
+    font-size:10px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;
+    color:var(--dev);margin-bottom:8px;
+  }
+  .devnote ul{padding-left:18px;display:flex;flex-direction:column;gap:6px;}
+  .devnote li{font-size:12.5px;color:#78350f;line-height:1.5;}
+  .devnote li b{color:#451a03;}
+
+  /* ── Screen scaffolding (mock-only chrome, visually distinct from the
+     faithful app reproduction below it) ────────────────────────────── */
+  .screen{margin-top:44px;}
+  .screen-tag{
+    display:inline-flex;align-items:center;gap:8px;
+    font-size:10.5px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;
+    color:var(--dev);background:var(--dev-bg);border:1px solid var(--dev-border);
+    padding:4px 10px;border-radius:999px;
+  }
+  .screen-title{margin-top:10px;font-size:17px;font-weight:700;color:var(--ink);}
+  .screen-caption{margin-top:4px;font-size:12.5px;color:var(--ink-soft);max-width:780px;line-height:1.5;}
+  .reset-link{
+    appearance:none;background:none;border:none;cursor:pointer;
+    font-family:var(--font);font-size:11.5px;font-weight:700;color:var(--dev);
+    display:inline-flex;align-items:center;gap:4px;padding:0;margin-top:8px;
+  }
+  .reset-link:hover{text-decoration:underline;}
+
+  /* ── Fake browser chrome wrapping each faithful app reproduction ─── */
+  .chrome{
+    margin-top:16px;
+    border-radius:14px;
+    overflow:hidden;
+    box-shadow:0 18px 46px rgba(17,24,39,0.16), 0 2px 8px rgba(17,24,39,0.08);
+    border:1px solid #d7dae0;
+  }
+  .chrome-bar{
+    background:#e9ebef;height:38px;display:flex;align-items:center;gap:10px;padding:0 12px;
+    border-bottom:1px solid #d7dae0;
+  }
+  .chrome-dot{width:10px;height:10px;border-radius:50%;}
+  .chrome-url{
+    flex:1;height:22px;background:#f8f9fb;border:1px solid #dbdee4;border-radius:999px;
+    display:flex;align-items:center;padding:0 12px;font-size:11px;color:var(--ink-faint);
+    font-family:var(--font);
+  }
+
+  /* ── Faithful MuMap app reproduction ──────────────────────────────
+     Mirrors src/MuMap.jsx's header/styles object + tileStyles.js as
+     closely as a static mock reasonably can. ─────────────────────── */
+  .app-shell{background:var(--panel);}
+  .app-header{
+    display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;
+    padding:10px 16px;background:#fff;border-bottom:1px solid var(--border);
+  }
+  .app-header-left{display:flex;align-items:center;gap:10px;min-width:0;}
+  .app-iconbtn{
+    width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:#fff;
+    display:flex;align-items:center;justify-content:center;color:var(--ink-soft);flex-shrink:0;
+  }
+  .app-title{font-weight:700;font-size:18px;color:var(--ink);line-height:1.1;}
+  .app-sub{font-size:11px;color:var(--ink-faint);margin-top:1px;}
+  .app-header-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .avatar-stack{display:flex;align-items:center;margin-right:2px;}
+  .avatar{
+    width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    color:#fff;font-size:11px;font-weight:700;border:2px solid #fff;margin-left:-8px;
+    box-shadow:0 1px 2px rgba(0,0,0,0.15);
+  }
+  .avatar:first-child{margin-left:0;}
+  .sep{width:1px;height:22px;background:var(--border);margin:0 2px;}
+  .zoom-readout{font-size:11px;color:var(--ink-soft);font-weight:600;padding:0 2px;}
+
+  .btn{
+    display:inline-flex;align-items:center;gap:6px;
+    background:#fff;border:1px solid var(--border);border-radius:8px;
+    padding:7px 12px;font-size:12.5px;font-weight:700;color:var(--ink);
+    font-family:var(--font);cursor:pointer;transition:box-shadow .12s,border-color .12s;
+  }
+  .btn:hover{box-shadow:0 2px 6px rgba(31,41,55,0.12);border-color:#d7dae0;}
+  .btn:disabled{cursor:default;opacity:.6;box-shadow:none;}
+  .btn svg{width:14px;height:14px;}
+
+  .badge-pill{
+    display:none;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;
+    font-size:11.5px;font-weight:700;white-space:nowrap;
+  }
+  .badge-pill svg{width:12px;height:12px;}
+  .badge-pill.on{display:inline-flex;}
+  .badge-pill.state-active{background:var(--accent-soft);color:var(--accent);}
+  .badge-pill.state-done{background:var(--success-soft);color:var(--success);}
+
+  .control-wrap{position:relative;}
+  .popover{
+    display:none;position:absolute;top:calc(100% + 8px);right:0;width:240px;z-index:40;
+    background:#fff;border:1px solid var(--border);border-radius:10px;
+    box-shadow:0 12px 28px rgba(31,41,55,0.2);padding:14px;flex-direction:column;gap:10px;
+  }
+  .popover.on{display:flex;}
+  .popover-title{font-size:12.5px;font-weight:800;color:var(--ink);}
+  .popover-body{font-size:11.5px;color:var(--ink-soft);line-height:1.5;}
+  .popover-actions{display:flex;gap:8px;margin-top:2px;}
+  .popover-btn{
+    flex:1;border:none;border-radius:7px;padding:7px 8px;font-size:12px;font-weight:700;
+    font-family:var(--font);cursor:pointer;
+  }
+  .popover-btn.primary{background:var(--accent);color:#fff;}
+  .popover-btn.secondary{background:#f3f4f6;color:var(--ink-soft);}
+
+  .spin{animation:spin 0.9s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* ── Board area ────────────────────────────────────────────────── */
+  .board-wrap{position:relative;}
+  .canvas-scroll{overflow-x:auto;background:#fafbfc;}
+  .canvas{
+    position:relative;width:1020px;height:540px;
+    background-image:radial-gradient(circle,#d9dce3 1px, transparent 1px);
+    background-size:20px 20px;
+  }
+
+  .ghost-panel{
+    display:none;position:absolute;top:14px;right:14px;z-index:6;width:190px;
+    background:rgba(255,255,255,0.96);backdrop-filter:blur(4px);
+    border:1px solid var(--border);border-radius:10px;
+    box-shadow:0 8px 22px rgba(31,41,55,0.14);padding:10px 12px;
+    flex-direction:column;gap:8px;
+  }
+  .ghost-panel.on{display:flex;}
+  .ghost-panel-title{
+    display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:800;
+    letter-spacing:0.03em;text-transform:uppercase;color:var(--accent);
+  }
+  .ghost-panel-title svg{width:11px;height:11px;}
+  .ghost-row{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink);}
+  .ghost-row .avatar{margin-left:0;width:20px;height:20px;font-size:9.5px;border-width:1.5px;}
+  .ghost-row .count{margin-left:auto;font-weight:700;color:var(--ink-soft);}
+  .ghost-panel-foot{font-size:10px;color:var(--ink-faint);line-height:1.4;border-top:1px solid var(--border);padding-top:7px;}
+
+  .frame{
+    position:absolute;border-radius:10px;border:2px dashed var(--frame-color);
+    background:rgba(148,163,184,0.08);
+  }
+  .frame-tab{
+    position:absolute;top:-13px;left:12px;padding:3px 10px;border-radius:6px;
+    background:var(--frame-color);color:#fff;font-weight:700;font-size:12px;
+  }
+
+  .tile-slot{position:absolute;}
+  .flip{width:100%;height:100%;perspective:1000px;}
+  .flip-inner{
+    position:relative;width:100%;height:100%;transform-style:preserve-3d;
+    transition:transform .68s cubic-bezier(.45,.15,.2,1.15);
+    transition-delay:calc(var(--i,0) * 90ms);
+  }
+  .board.is-revealed .flip-inner{transform:rotateY(180deg);}
+  .face{
+    position:absolute;inset:0;backface-visibility:hidden;border-radius:14px;
+    box-sizing:border-box;overflow:hidden;
+  }
+  .face-back{transform:rotateY(180deg);}
+
+  .locked-face{
+    background:#f9fafb;border:1.5px dashed var(--author-fade,rgba(31,41,55,0.25));
+    border-left:4px solid var(--author,#94a3b8);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+    padding:8px;text-align:center;
+  }
+  .locked-face svg{width:16px;height:16px;color:var(--author,#94a3b8);}
+  .locked-face .lname{font-size:11px;font-weight:700;color:var(--ink-soft);}
+  .locked-face .lsub{font-size:9.5px;color:var(--ink-faint);font-style:italic;}
+
+  .card{
+    background:var(--card-green);border:1px solid var(--border);border-radius:14px;
+    box-shadow:0 2px 6px rgba(31,41,55,0.08);
+    padding:12px 12px 10px;height:100%;box-sizing:border-box;position:relative;
+  }
+  .card .title{
+    font-weight:700;font-size:12.5px;color:var(--ink);line-height:1.28;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+    padding-right:56px;
+  }
+  .card-chip{
+    position:absolute;top:8px;right:8px;display:flex;align-items:center;gap:4px;
+    background:rgba(255,255,255,0.8);border-radius:999px;padding:2px 7px 2px 2px;
+    font-size:9.5px;font-weight:700;color:var(--ink-soft);
+  }
+  .card-chip .avatar{width:15px;height:15px;font-size:8px;margin:0;border:none;box-shadow:none;}
+
+  .add-ghost{
+    position:absolute;display:flex;align-items:center;justify-content:center;gap:6px;
+    border:1.5px dashed rgba(79,70,229,0.4);border-radius:12px;background:rgba(79,70,229,0.04);
+    color:var(--accent);font-size:11.5px;font-weight:700;cursor:pointer;transition:background .12s;
+  }
+  .add-ghost:hover{background:rgba(79,70,229,0.09);}
+
+  @media (max-width:640px){
+    .app-header{padding:10px 12px;}
+    .page{padding:24px 14px 60px;}
+  }
+</style>
+
+<div class="page">
+
+  <div class="intro">
+    <h1>Reflection Session — mock</h1>
+    <p class="sub">
+      How a private-write / synchronized-reveal "Reflection Session" lives inside the existing Retro
+      template (Start / Stop / Continue), mirroring the existing Vote Session header pattern for its
+      owner-only start/end control. Four screens below: the owner's board mid-session, a collaborator's
+      board at the same moment, the live reveal, and the board with no session running for comparison.
+    </p>
+    <div class="legend">
+      <div class="legend-item"><span class="legend-swatch" style="background:#93d9a8"></span> A real, visible card</div>
+      <div class="legend-item"><span class="legend-swatch" style="background:#f9fafb;border:1.5px dashed rgba(31,41,55,.3)"></span> Someone else's card, locked</div>
+      <div class="legend-item"><span class="legend-swatch" style="background:var(--c-jordan)"></span> Jordan (session owner)</div>
+      <div class="legend-item"><span class="legend-swatch" style="background:var(--c-priya)"></span> Priya</div>
+      <div class="legend-item"><span class="legend-swatch" style="background:var(--c-sam)"></span> Sam</div>
+    </div>
+
+    <div class="devnote">
+      <div class="devnote-label">Mock-only scaffolding — not part of the app</div>
+      <ul>
+        <li>Everything inside a rounded "browser" frame below is a faithful reproduction of real MuMap chrome. Amber dashed boxes and labels (like this one) are mock scaffolding only.</li>
+        <li>Screens 1 &amp; 2 are <b>live and synced</b> — they're the same map. Click "Start reflection session" or "End reflection session" in Screen 1 and watch Screen 2 react at the same moment, the way realtime broadcast actually would.</li>
+        <li>Sample participants: <b>Jordan Lee</b> (map owner, starts/ends the session), <b>Priya Shah</b> and <b>Sam Okafor</b> (collaborators).</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════ SCREEN 1 — OWNER ══════════════════════════ -->
+  <div class="screen">
+    <span class="screen-tag">Screen 1 · interactive</span>
+    <h2 class="screen-title">Owner's board — during and after a Reflection Session</h2>
+    <p class="screen-caption">
+      Viewing as <b>Jordan Lee</b>, the map owner. Jordan's own cards are always fully visible and
+      editable. Priya's and Sam's cards render as lean lock placeholders until Jordan ends the session —
+      Jordan gets no early peek either, per the plan's "even the owner is blind" rule.
+    </p>
+    <button class="reset-link" onclick="resetDemo()">↺ Reset this demo to before the session started</button>
+
+    <div class="chrome">
+      <div class="chrome-bar">
+        <span class="chrome-dot" style="background:#ff5f57"></span>
+        <span class="chrome-dot" style="background:#febc2e"></span>
+        <span class="chrome-dot" style="background:#28c840"></span>
+        <div class="chrome-url">mumap.app/board/sprint-14-retro</div>
+      </div>
+
+      <div class="app-shell">
+        <div class="app-header">
+          <div class="app-header-left">
+            <div class="app-iconbtn">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            </div>
+            <div>
+              <div class="app-title">Sprint 14 Retro</div>
+              <div class="app-sub">Pick a shape from the panel · Drag a tile's dots to link · Space to pan</div>
+            </div>
+          </div>
+          <div class="app-header-right">
+            <span id="owner-badge" class="badge-pill"></span>
+
+            <div class="avatar-stack" title="Jordan Lee, Priya Shah, Sam Okafor">
+              <div class="avatar" style="background:var(--c-jordan)">J</div>
+              <div class="avatar" style="background:var(--c-priya)">P</div>
+              <div class="avatar" style="background:var(--c-sam)">S</div>
+            </div>
+
+            <div class="control-wrap">
+              <button id="owner-session-btn" class="btn"></button>
+              <div id="start-popover" class="popover">
+                <div class="popover-title">Start a Reflection Session</div>
+                <div class="popover-body">Everyone writes privately — new cards are visible only to their
+                  author until you end the session. Existing cards on the board aren't affected.</div>
+                <div class="popover-actions">
+                  <button class="popover-btn secondary" onclick="cancelStart()">Cancel</button>
+                  <button class="popover-btn primary" onclick="confirmStart()">Start session</button>
+                </div>
+              </div>
+            </div>
+
+            <button class="btn">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/></svg>
+              Share
+            </button>
+            <div class="sep"></div>
+            <span class="zoom-readout">− &nbsp;100%&nbsp; +</span>
+          </div>
+        </div>
+
+        <div class="board-wrap">
+          <div id="ghost-owner" class="ghost-panel">
+            <div class="ghost-panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+              Reflecting now
+            </div>
+            <div class="ghost-row"><div class="avatar" style="background:var(--c-sam)">S</div> Sam <span class="count">3 cards</span></div>
+            <div class="ghost-row"><div class="avatar" style="background:var(--c-priya)">P</div> Priya <span class="count">2 cards</span></div>
+            <div class="ghost-panel-foot">Content stays hidden — this is a live count only, until the session ends.</div>
+          </div>
+
+          <div class="canvas-scroll">
+            <div id="board-owner" class="canvas board">
+
+              <div class="frame" style="left:20px;top:20px;width:300px;height:500px;"><div class="frame-tab">Start</div></div>
+              <div class="frame" style="left:360px;top:20px;width:300px;height:500px;"><div class="frame-tab">Stop</div></div>
+              <div class="frame" style="left:700px;top:20px;width:300px;height:500px;"><div class="frame-tab">Continue</div></div>
+
+              <!-- Start frame -->
+              <div class="tile-slot" style="left:50px;top:70px;width:240px;height:116px;">
+                <div class="card"><span class="title">Pairing on gnarly bugs before they sit for days</span>
+                  <span class="card-chip"><div class="avatar" style="background:var(--c-jordan)">J</div> You</span></div>
+              </div>
+              <div class="tile-slot" style="left:50px;top:200px;width:240px;height:116px;">
+                <div class="flip" style="--i:0"><div class="flip-inner">
+                  <div class="face face-front locked-face" style="--author:var(--c-priya);--author-fade:rgba(245,158,11,.35)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                    <span class="lname">Priya Shah</span><span class="lsub">writing…</span></div>
+                  <div class="face face-back"><div class="card"><span class="title">A weekly 15-min demo of what shipped</span>
+                    <span class="card-chip"><div class="avatar" style="background:var(--c-priya)">P</div> Priya</span></div></div>
+                </div></div>
+              </div>
+              <div class="tile-slot" style="left:50px;top:330px;width:240px;height:116px;">
+                <div class="flip" style="--i:1"><div class="flip-inner">
+                  <div class="face face-front locked-face" style="--author:var(--c-sam);--author-fade:rgba(14,165,233,.35)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                    <span class="lname">Sam Okafor</span><span class="lsub">writing…</span></div>
+                  <div class="face face-back"><div class="card"><span class="title">Writing a short design note before big PRs</span>
+                    <span class="card-chip"><div class="avatar" style="background:var(--c-sam)">S</div> Sam</span></div></div>
+                </div></div>
+              </div>
+              <div class="add-ghost" style="left:50px;top:460px;width:240px;height:44px;">+ Add a card</div>
+
+              <!-- Stop frame -->
+              <div class="tile-slot" style="left:390px;top:70px;width:240px;height:116px;">
+                <div class="card"><span class="title">Merging PRs after 6pm without another reviewer awake</span>
+                  <span class="card-chip"><div class="avatar" style="background:var(--c-jordan)">J</div> You</span></div>
+              </div>
+              <div class="tile-slot" style="left:390px;top:200px;width:240px;height:116px;">
+                <div class="flip" style="--i:2"><div class="flip-inner">
+                  <div class="face face-front locked-face" style="--author:var(--c-sam);--author-fade:rgba(14,165,233,.35)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                    <span class="lname">Sam Okafor</span><span class="lsub">writing…</span></div>
+                  <div class="face face-back"><div class="card"><span class="title">Scheduling meetings back-to-back with no buffer</span>
+                    <span class="card-chip"><div class="avatar" style="background:var(--c-sam)">S</div> Sam</span></div></div>
+                </div></div>
+              </div>
+              <div class="add-ghost" style="left:390px;top:330px;width:240px;height:44px;">+ Add a card</div>
+
+              <!-- Continue frame -->
+              <div class="tile-slot" style="left:730px;top:70px;width:240px;height:116px;">
+                <div class="card"><span class="title">Rotating the on-call runbook updates</span>
+                  <span class="card-chip"><div class="avatar" style="background:var(--c-jordan)">J</div> You</span></div>
+              </div>
+              <div class="tile-slot" style="left:730px;top:200px;width:240px;height:116px;">
+                <div class="flip" style="--i:3"><div class="flip-inner">
+                  <div class="face face-front locked-face" style="--author:var(--c-priya);--author-fade:rgba(245,158,11,.35)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                    <span class="lname">Priya Shah</span><span class="lsub">writing…</span></div>
+                  <div class="face face-back"><div class="card"><span class="title">Friday retro + demo combo</span>
+                    <span class="card-chip"><div class="avatar" style="background:var(--c-priya)">P</div> Priya</span></div></div>
+                </div></div>
+              </div>
+              <div class="tile-slot" style="left:730px;top:330px;width:240px;height:116px;">
+                <div class="flip" style="--i:4"><div class="flip-inner">
+                  <div class="face face-front locked-face" style="--author:var(--c-sam);--author-fade:rgba(14,165,233,.35)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                    <span class="lname">Sam Okafor</span><span class="lsub">writing…</span></div>
+                  <div class="face face-back"><div class="card"><span class="title">Recording short Loom walkthroughs for reviewers</span>
+                    <span class="card-chip"><div class="avatar" style="background:var(--c-sam)">S</div> Sam</span></div></div>
+                </div></div>
+              </div>
+              <div class="add-ghost" style="left:730px;top:460px;width:240px;height:44px;">+ Add a card</div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════ SCREEN 2 — COLLABORATOR ══════════════════════════ -->
+  <div class="screen">
+    <span class="screen-tag">Screen 2 · synced to Screen 1</span>
+    <h2 class="screen-title">Collaborator's board — same map, same moment</h2>
+    <p class="screen-caption">
+      Viewing as <b>Priya Shah</b>, a collaborator (not the owner). Priya's own two cards are fully hers
+      to see and edit; Jordan's and Sam's are locked. No start/end control — session control is
+      owner-only, matching Vote Session's existing rule.
+    </p>
+
+    <div class="chrome">
+      <div class="chrome-bar">
+        <span class="chrome-dot" style="background:#ff5f57"></span>
+        <span class="chrome-dot" style="background:#febc2e"></span>
+        <span class="chrome-dot" style="background:#28c840"></span>
+        <div class="chrome-url">mumap.app/board/sprint-14-retro</div>
+      </div>
+
+      <div class="app-shell">
+        <div class="app-header">
+          <div class="app-header-left">
+            <div class="app-iconbtn">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            </div>
+            <div>
+              <div class="app-title">Sprint 14 Retro</div>
+              <div class="app-sub">Pick a shape from the panel · Drag a tile's dots to link · Space to pan</div>
+            </div>
+          </div>
+          <div class="app-header-right">
+            <span id="collab-badge" class="badge-pill"></span>
+            <div class="avatar-stack" title="Jordan Lee, Priya Shah, Sam Okafor">
+              <div class="avatar" style="background:var(--c-jordan)">J</div>
+              <div class="avatar" style="background:var(--c-priya)">P</div>
+              <div class="avatar" style="background:var(--c-sam)">S</div>
+            </div>
+            <div class="sep"></div>
+            <span class="zoom-readout">− &nbsp;100%&nbsp; +</span>
+          </div>
+        </div>
+
+        <div class="board-wrap">
+          <div id="ghost-collab" class="ghost-panel">
+            <div class="ghost-panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+              Reflecting now
+            </div>
+            <div class="ghost-row"><div class="avatar" style="background:var(--c-jordan)">J</div> Jordan <span class="count">3 cards</span></div>
+            <div class="ghost-row"><div class="avatar" style="background:var(--c-sam)">S</div> Sam <span class="count">3 cards</span></div>
+            <div class="ghost-panel-foot">Content stays hidden — this is a live count only, until Jordan ends the session.</div>
+          </div>
+
+          <div class="canvas-scroll">
+            <div id="board-collab" class="canvas board">
+
+              <div class="frame" style="left:20px;top:20px;width:300px;height:500px;"><div class="frame-tab">Start</div></div>
+              <div class="frame" style="left:360px;top:20px;width:300px;height:500px;"><div class="frame-tab">Stop</div></div>
+              <div class="frame" style="left:700px;top:20px;width:300px;height:500px;"><div class="frame-tab">Continue</div></div>
+
+              <!-- Start frame -->
+              <div class="tile-slot" style="left:50px;top:70px;width:240px;height:116px;">
+                <div class="flip" style="--i:0"><div class="flip-inner">
+                  <div class="face face-front locked-face" style="--author:var(--c-jordan);--author-fade:rgba(124,58,237,.35)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                    <span class="lname">Jordan Lee</span><span class="lsub">writing…</span></div>
+                  <div class="face face-back"><div class="card"><span class="title">Pairing on gnarly bugs before they sit for days</span>
+                    <span class="card-chip"><div class="avatar" style="background:var(--c-jordan)">J</div> Jordan</span></div></div>
+                </div></div>
+              </div>
+              <div class="tile-slot" style="left:50px;top:200px;width:240px;height:116px;">
+                <div class="card"><span class="title">A weekly 15-min demo of what shipped</span>
+                  <span class="card-chip"><div class="avatar" style="background:var(--c-priya)">P</div> You</span></div>
+              </div>
+              <div class="tile-slot" style="left:50px;top:330px;width:240px;height:116px;">
+                <div class="flip" style="--i:1"><div class="flip-inner">
+                  <div class="face face-front locked-face" style="--author:var(--c-sam);--author-fade:rgba(14,165,233,.35)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                    <span class="lname">Sam Okafor</span><span class="lsub">writing…</span></div>
+                  <div class="face face-back"><div class="card"><span class="title">Writing a short design note before big PRs</span>
+                    <span class="card-chip"><div class="avatar" style="background:var(--c-sam)">S</div> Sam</span></div></div>
+                </div></div>
+              </div>
+              <div class="add-ghost" style="left:50px;top:460px;width:240px;height:44px;">+ Add a card</div>
+
+              <!-- Stop frame -->
+              <div class="tile-slot" style="left:390px;top:70px;width:240px;height:116px;">
+                <div class="flip" style="--i:2"><div class="flip-inner">
+                  <div class="face face-front locked-face" style="--author:var(--c-jordan);--author-fade:rgba(124,58,237,.35)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                    <span class="lname">Jordan Lee</span><span class="lsub">writing…</span></div>
+                  <div class="face face-back"><div class="card"><span class="title">Merging PRs after 6pm without another reviewer awake</span>
+                    <span class="card-chip"><div class="avatar" style="background:var(--c-jordan)">J</div> Jordan</span></div></div>
+                </div></div>
+              </div>
+              <div class="tile-slot" style="left:390px;top:200px;width:240px;height:116px;">
+                <div class="flip" style="--i:3"><div class="flip-inner">
+                  <div class="face face-front locked-face" style="--author:var(--c-sam);--author-fade:rgba(14,165,233,.35)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                    <span class="lname">Sam Okafor</span><span class="lsub">writing…</span></div>
+                  <div class="face face-back"><div class="card"><span class="title">Scheduling meetings back-to-back with no buffer</span>
+                    <span class="card-chip"><div class="avatar" style="background:var(--c-sam)">S</div> Sam</span></div></div>
+                </div></div>
+              </div>
+              <div class="add-ghost" style="left:390px;top:330px;width:240px;height:44px;">+ Add a card</div>
+
+              <!-- Continue frame -->
+              <div class="tile-slot" style="left:730px;top:70px;width:240px;height:116px;">
+                <div class="flip" style="--i:4"><div class="flip-inner">
+                  <div class="face face-front locked-face" style="--author:var(--c-jordan);--author-fade:rgba(124,58,237,.35)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                    <span class="lname">Jordan Lee</span><span class="lsub">writing…</span></div>
+                  <div class="face face-back"><div class="card"><span class="title">Rotating the on-call runbook updates</span>
+                    <span class="card-chip"><div class="avatar" style="background:var(--c-jordan)">J</div> Jordan</span></div></div>
+                </div></div>
+              </div>
+              <div class="tile-slot" style="left:730px;top:200px;width:240px;height:116px;">
+                <div class="card"><span class="title">Friday retro + demo combo</span>
+                  <span class="card-chip"><div class="avatar" style="background:var(--c-priya)">P</div> You</span></div>
+              </div>
+              <div class="tile-slot" style="left:730px;top:330px;width:240px;height:116px;">
+                <div class="flip" style="--i:5"><div class="flip-inner">
+                  <div class="face face-front locked-face" style="--author:var(--c-sam);--author-fade:rgba(14,165,233,.35)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                    <span class="lname">Sam Okafor</span><span class="lsub">writing…</span></div>
+                  <div class="face face-back"><div class="card"><span class="title">Recording short Loom walkthroughs for reviewers</span>
+                    <span class="card-chip"><div class="avatar" style="background:var(--c-sam)">S</div> Sam</span></div></div>
+                </div></div>
+              </div>
+              <div class="add-ghost" style="left:730px;top:460px;width:240px;height:44px;">+ Add a card</div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════ SCREEN 3 — BASELINE ══════════════════════════ -->
+  <div class="screen">
+    <span class="screen-tag">Screen 3 · for comparison</span>
+    <h2 class="screen-title">Same board, no Reflection Session running</h2>
+    <p class="screen-caption">
+      Opt-in, not a mode change: with no session active, the board behaves exactly as it does today —
+      every card fully visible to everyone the instant it's written, no lock icons, no ghost-count panel,
+      no badge. These three cards predate this session entirely and are unaffected by it either way.
+    </p>
+
+    <div class="chrome">
+      <div class="chrome-bar">
+        <span class="chrome-dot" style="background:#ff5f57"></span>
+        <span class="chrome-dot" style="background:#febc2e"></span>
+        <span class="chrome-dot" style="background:#28c840"></span>
+        <div class="chrome-url">mumap.app/board/sprint-14-retro</div>
+      </div>
+
+      <div class="app-shell">
+        <div class="app-header">
+          <div class="app-header-left">
+            <div class="app-iconbtn">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            </div>
+            <div>
+              <div class="app-title">Sprint 14 Retro</div>
+              <div class="app-sub">Pick a shape from the panel · Drag a tile's dots to link · Space to pan</div>
+            </div>
+          </div>
+          <div class="app-header-right">
+            <div class="avatar-stack" title="Jordan Lee, Priya Shah, Sam Okafor">
+              <div class="avatar" style="background:var(--c-jordan)">J</div>
+              <div class="avatar" style="background:var(--c-priya)">P</div>
+              <div class="avatar" style="background:var(--c-sam)">S</div>
+            </div>
+            <button class="btn">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+              Start reflection session
+            </button>
+            <button class="btn">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/></svg>
+              Share
+            </button>
+            <div class="sep"></div>
+            <span class="zoom-readout">− &nbsp;100%&nbsp; +</span>
+          </div>
+        </div>
+
+        <div class="board-wrap">
+          <div class="canvas-scroll">
+            <div class="canvas">
+              <div class="frame" style="left:20px;top:20px;width:300px;height:500px;"><div class="frame-tab">Start</div></div>
+              <div class="frame" style="left:360px;top:20px;width:300px;height:500px;"><div class="frame-tab">Stop</div></div>
+              <div class="frame" style="left:700px;top:20px;width:300px;height:500px;"><div class="frame-tab">Continue</div></div>
+
+              <div class="tile-slot" style="left:50px;top:70px;width:240px;height:116px;">
+                <div class="card"><span class="title">Better handoff notes between on-call shifts</span>
+                  <span class="card-chip"><div class="avatar" style="background:var(--c-jordan)">J</div> Jordan</span></div>
+              </div>
+              <div class="add-ghost" style="left:50px;top:200px;width:240px;height:44px;">+ Add a card</div>
+
+              <div class="tile-slot" style="left:390px;top:70px;width:240px;height:116px;">
+                <div class="card"><span class="title">Slack threads with 40+ replies before a decision</span>
+                  <span class="card-chip"><div class="avatar" style="background:var(--c-sam)">S</div> Sam</span></div>
+              </div>
+              <div class="add-ghost" style="left:390px;top:200px;width:240px;height:44px;">+ Add a card</div>
+
+              <div class="tile-slot" style="left:730px;top:70px;width:240px;height:116px;">
+                <div class="card"><span class="title">Two-person review minimum on payments code</span>
+                  <span class="card-chip"><div class="avatar" style="background:var(--c-priya)">P</div> Priya</span></div>
+              </div>
+              <div class="add-ghost" style="left:730px;top:200px;width:240px;height:44px;">+ Add a card</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const LOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+  const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5.5"/></svg>';
+  const SPIN = '<svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-9-9"/></svg>';
+
+  let state = 'active'; // 'idle' | 'popover' | 'active' | 'revealing' | 'revealed'
+
+  function openStart(){ state = 'popover'; render(); }
+  function cancelStart(){ state = 'idle'; render(); }
+  function confirmStart(){ state = 'active'; render(); }
+  function endSession(){
+    state = 'revealing'; render();
+    setTimeout(() => { state = 'revealed'; render(); }, 950);
+  }
+  function resetDemo(){ state = 'idle'; render(); }
+
+  function setBadge(el, s){
+    el.classList.remove('on','state-active','state-done');
+    if (s === 'active') {
+      el.innerHTML = LOCK + ' Reflecting — cards are private';
+      el.classList.add('on','state-active');
+    } else if (s === 'revealing') {
+      el.innerHTML = SPIN + ' Revealing…';
+      el.classList.add('on','state-active');
+    } else if (s === 'revealed') {
+      el.innerHTML = CHECK + ' Revealed — 8 cards now visible';
+      el.classList.add('on','state-done');
+    }
+  }
+
+  function render(){
+    const ownerBtn = document.getElementById('owner-session-btn');
+    const popover = document.getElementById('start-popover');
+    const ownerBadge = document.getElementById('owner-badge');
+    const collabBadge = document.getElementById('collab-badge');
+    const boards = [document.getElementById('board-owner'), document.getElementById('board-collab')];
+    const ghosts = [document.getElementById('ghost-owner'), document.getElementById('ghost-collab')];
+
+    popover.classList.toggle('on', state === 'popover');
+
+    if (state === 'idle' || state === 'popover') {
+      ownerBtn.innerHTML = LOCK + ' Start reflection session';
+      ownerBtn.disabled = false;
+      ownerBtn.onclick = openStart;
+    } else if (state === 'active') {
+      ownerBtn.innerHTML = LOCK + ' End reflection session';
+      ownerBtn.disabled = false;
+      ownerBtn.onclick = endSession;
+    } else if (state === 'revealing') {
+      ownerBtn.innerHTML = SPIN + ' Revealing…';
+      ownerBtn.disabled = true;
+      ownerBtn.onclick = null;
+    } else if (state === 'revealed') {
+      ownerBtn.innerHTML = LOCK + ' Start reflection session';
+      ownerBtn.disabled = false;
+      ownerBtn.onclick = openStart;
+    }
+
+    if (state === 'active' || state === 'revealing' || state === 'revealed') {
+      setBadge(ownerBadge, state);
+      setBadge(collabBadge, state);
+    } else {
+      ownerBadge.classList.remove('on');
+      collabBadge.classList.remove('on');
+    }
+
+    boards.forEach(b => {
+      b.classList.toggle('is-active', state === 'active' || state === 'revealing');
+      b.classList.toggle('is-revealed', state === 'revealed');
+    });
+    ghosts.forEach(g => g.classList.toggle('on', state === 'active' || state === 'revealing'));
+  }
+
+  render();
+</script>
